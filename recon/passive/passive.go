@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+// --------------------  Crt.sh Finder func ---------------------- //
+
 type CertEntry struct {
 	Name string `json:"name_value"`
 }
@@ -42,6 +44,50 @@ func FindCertSh(domain string) ([]string, error) {
 			}
 		}
 	}
+	return subdomains, nil
+}
+
+// ---------------------------- SecurityTrails Finder Func ------------------------------//
+
+type SecurityTrailsResponse struct {
+	Subdomains []string `json:"subdomains"`
+}
+
+func FindSecTrails(domain, API_KEY string) ([]string, error) {
+	url := fmt.Sprintf("https://api.securitytrails.com/v1/domain/%s/subdomains", domain)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("APIKEY", API_KEY)
+
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result SecurityTrailsResponse
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	var subdomains []string
+	for _, sub := range result.Subdomains {
+		subdomains = append(subdomains, fmt.Sprintf("%s.%s", sub, domain))
+	}
+
 	return subdomains, nil
 }
 
