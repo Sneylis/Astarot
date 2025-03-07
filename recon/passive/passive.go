@@ -3,6 +3,7 @@ package passive
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -15,35 +16,46 @@ type CertEntry struct {
 }
 
 func FindCertSh(domain string) ([]string, error) {
-	url := fmt.Sprintf("https://crt.sh/?q=%%25.%s&output=json", domain)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("https://crt.sh/?q=%%.%s&output=json", domain)
+
+	// Добавляем User-Agent, чтобы нас не блокировали
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Astarot/1.0; +https://github.com/yourrepo)")
 
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	// Проверяем статус-код
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body) // Читаем тело ответа для отладки
+		return nil, fmt.Errorf("Crt.sh вернул ошибку: %d, ответ: %s", resp.StatusCode, body)
 	}
 
-	var entries []CertEntry
-	err = json.Unmarshal(body, &entries)
+	// Парсим JSON
+	var results []struct {
+		Name string `json:"name_value"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&results)
 	if err != nil {
-		return nil, err
+		body, _ := io.ReadAll(resp.Body) // Читаем тело ответа
+		return nil, fmt.Errorf("Ошибка при разборе JSON: %s, Ответ: %s", err, body)
 	}
 
-	subdomainsMap := make(map[string]bool)
+	// Извлекаем поддомены
 	var subdomains []string
-	for _, entry := range entries {
-		for _, sub := range strings.Split(entry.Name, "\n") {
-			if _, exists := subdomainsMap[sub]; !exists {
-				subdomains = append(subdomains, sub)
-				subdomainsMap[sub] = true
-			}
+	for _, r := range results {
+		if !strings.HasPrefix(r.Name, "*.") {
+			subdomains = append(subdomains, r.Name)
 		}
 	}
+
 	return subdomains, nil
 }
 
@@ -89,17 +101,4 @@ func FindSecTrails(domain, API_KEY string) ([]string, error) {
 	}
 
 	return subdomains, nil
-}
-
-func main() {
-	var domain string
-	fmt.Printf("Type the domain: ")
-	fmt.Scanf("%s\n", &domain)
-	subdomains, err := FindCertSh(domain)
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return
-	}
-
-	fmt.Println("Finded Subdomains: ", subdomains)
 }
