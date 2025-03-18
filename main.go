@@ -1,167 +1,205 @@
 package main
 
 import (
+	"Astarot/core"
 	"Astarot/recon/passive"
 	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
-	"slices"
 	"sync"
 	"time"
 )
 
-const workerCount = 10
-
-func checkURL(domain string, wg *sync.WaitGroup, results chan<- string) {
-	defer wg.Done()
-
-	client := http.Client{
-		Timeout: 3 * time.Second,
-	}
-
-	resp, err := client.Get("http://" + domain)
-	if err != nil {
-		return
-	}
-
-	defer resp.Body.Close()
-
-	results <- fmt.Sprintf("%s -> %d", domain, resp.StatusCode)
-}
-
-func processUrl(subdomains []string) {
-	var wg sync.WaitGroup
-	results := make(chan string, len(subdomains))
-
-	sem := make(chan struct{}, workerCount)
-
-	for _, domain := range subdomains {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(domain string) {
-			defer func() { <-sem }()
-			checkURL(domain, &wg, results)
-		}(domain)
-	}
-
-	wg.Wait()
-	close(results)
-
-	for results := range results {
-		fmt.Println(results)
-	}
-
-}
-
-func saveToFile(filename string, subdomains map[string]bool) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	for sub := range subdomains {
-		_, err := writer.WriteString(sub + "\n")
-		if err != nil {
-			return err
-		}
-	}
-
-	return writer.Flush()
-}
-
 type Config struct {
-	APIKey string `json:"api_key"`
+	Workers    int
+	Timeout    time.Duration
+	UserAgent  string
+	MaxRetries int
 }
 
-func GetAPIKeys() string {
-	data, err := ioutil.ReadFile("config.json")
-	if err != nil {
-		log.Fatal("[ERROR] to read config.json", err)
-	}
-
-	var config Config
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		log.Fatal("[ERROR] to read JSON", err)
-	}
-
-	if config.APIKey == "" {
-		log.Fatal("[ERROR] API key not found !", err)
-	}
-
-	return config.APIKey
-
-}
-
-func startPassive(domain string) []string {
-
-	var subdomains []string
-	var AliveSub []string
-
-	api_key := GetAPIKeys()
-	if api_key == "" {
-		fmt.Println("Cant Find API_Key")
-		return nil
-	}
-
-	subdomainsCrt, err := passive.FindCertSh(domain)
-	if err != nil {
-		fmt.Println("ERROR with Crt.sh", err)
-		return nil
-	}
-
-	subdomainSecTrails, err := passive.FindSecTrails(domain, GetAPIKeys())
-	if err != nil {
-		fmt.Println("ERROR with SecurityTrails", err)
-		return nil
-	}
-
-	subdomains = append(subdomains, subdomainsCrt...)
-	subdomains = append(subdomains, subdomainSecTrails...)
-
-	slices.Sort(subdomains)
-	subdomains = slices.Compact(subdomains)
-
-	for _, domain := range subdomains {
-		resp, err := http.Get("http://" + domain)
-		if err != nil {
-			fmt.Println("Error to connect", "http://"+domain)
-			continue
-		}
-		defer resp.Body.Close()
-		fmt.Println(domain, "->", resp.StatusCode)
-		AliveSub = append(AliveSub, domain)
-	}
-
-	return AliveSub
+var cfg = Config{
+	Workers:    10,
+	Timeout:    10 * time.Second,
+	UserAgent:  "Mozilla/5.0 (compatible; MyScanner/1.0)",
+	MaxRetries: 1,
 }
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	//banner
 	var domain string
 	banner := `
 
- ▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
-▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
-▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
-░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░ 
- ▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░ 
- ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░   
-  ▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░    
-  ░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░      
-      ░  ░      ░                 ░  ░   ░         ░ ░           
-	  
-		Recon tool - Astarot v1.0`
+	▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
+	▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
+	▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
+	░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
+	▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
+	▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
+	▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
+	░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
+		░  ░      ░                 ░  ░   ░         ░ ░
+
+			Recon tool - Astarot v1.0`
 	fmt.Println(banner)
 	fmt.Printf("Domain: -> ")
 	fmt.Scanln(&domain)
 
-	PassiveRes := startPassive(domain)
-	processUrl(PassiveRes)
+	// Инициализируем каналы
+	subdomains := make(chan string)
+	uniqueSubdomains := core.ClearDuplicate(subdomains)
+	checkedDomains := make(chan string)
+
+	// Запускаем сбор данных
+	var fetchersWG sync.WaitGroup
+	fetchersWG.Add(2)
+	go func() {
+		defer fetchersWG.Done()
+		passive.FetchCrtSH(ctx, domain, subdomains)
+	}()
+	go func() {
+		defer fetchersWG.Done()
+		passive.FetchSecTrails(ctx, domain, subdomains)
+	}()
+
+	// Закрываем канал subdomains после завершения всех сборщиков
+	go func() {
+		fetchersWG.Wait()
+	}()
+
+	// Запускаем проверку доменов
+	var checkerWG sync.WaitGroup
+	checkerWG.Add(cfg.Workers)
+	for i := 0; i < cfg.Workers; i++ {
+		go func(id int) {
+			defer checkerWG.Done()
+			checkDomains(ctx, uniqueSubdomains, checkedDomains, id)
+		}(i + 1)
+	}
+
+	// Запускаем запись результатов
+	var writerWG sync.WaitGroup
+	writerWG.Add(1)
+	go func() {
+		defer writerWG.Done()
+		saveResults(ctx, checkedDomains, "live_domains.txt")
+	}()
+
+	// Ожидаем завершения всех компонентов
+	checkerWG.Wait()
+	close(checkedDomains)
+	writerWG.Wait()
+
+	log.Println("Scan completed successfully")
 }
+
+func checkDomains(ctx context.Context, in <-chan string, out chan<- string, workerID int) {
+	client := &http.Client{
+		Timeout: cfg.Timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 10,
+		},
+	}
+
+	for domain := range in {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if checkDomain(ctx, client, domain, workerID) {
+				out <- domain
+			}
+		}
+	}
+}
+
+func checkDomain(ctx context.Context, client *http.Client, domain string, workerID int) bool {
+	url := "http://" + domain
+
+	for attempt := 1; attempt <= cfg.MaxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			log.Printf("[W%d] Error creating request: %v", workerID, err)
+			return false
+		}
+		req.Header.Set("User-Agent", cfg.UserAgent)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("[W%d] Attempt %d/%d for %s: %v",
+				workerID, attempt, cfg.MaxRetries, domain, err)
+			time.Sleep(time.Duration(attempt) * time.Second)
+			continue
+		}
+
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+
+		duration := time.Since(start)
+		log.Printf("[W%d] %s - Status: %d, Length: %d, Duration: %s",
+			workerID, domain, resp.StatusCode, len(body), duration.Round(time.Millisecond))
+
+		// Считаем успешными статусы 2xx и 3xx
+		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			return true
+		}
+	}
+	return false
+}
+
+func saveResults(ctx context.Context, in <-chan string, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case domain, ok := <-in:
+			if !ok {
+				return nil
+			}
+			if _, err := writer.WriteString(domain + "\n"); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// func main() {
+// 	var domain string
+// 	banner := `
+
+//  ▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
+// ▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
+// ▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
+// ░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
+//  ▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
+//  ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
+//   ▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
+//   ░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
+//       ░  ░      ░                 ░  ░   ░         ░ ░
+
+// 		Recon tool - Astarot v1.0`
+// 	fmt.Println(banner)
+// 	fmt.Printf("Domain: -> ")
+// 	fmt.Scanln(&domain)
+
+// 	passive.Passive(domain, "res.txt")
+// }

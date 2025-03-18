@@ -1,104 +1,141 @@
 package passive
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
-// --------------------  Crt.sh Finder func ---------------------- //
+const (
+	Red   = "\033[31m"
+	Green = "\033[32m"
+	Reset = "\033[0m"
+)
 
-type CertEntry struct {
-	Name string `json:"name_value"`
-}
+func FetchCrtSH(ctx context.Context, domain string, out chan<- string) {
 
-func FindCertSh(domain string) ([]string, error) {
 	url := fmt.Sprintf("https://crt.sh/?q=%%.%s&output=json", domain)
-
-	// Добавляем User-Agent, чтобы нас не блокировали
+	defer close(out)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		log.Println(err)
+		return
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Astarot/1.0; +https://github.com/yourrepo)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		log.Println(err)
+		return
 	}
 	defer resp.Body.Close()
 
-	// Проверяем статус-код
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body) // Читаем тело ответа для отладки
-		return nil, fmt.Errorf("Crt.sh вернул ошибку: %d, ответ: %s", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf(Red+"[ERROR]"+Reset+"Crt.sh return error: %d, resp: %s", resp.StatusCode, body)
+		return
 	}
 
-	// Парсим JSON
 	var results []struct {
 		Name string `json:"name_value"`
 	}
+
 	err = json.NewDecoder(resp.Body).Decode(&results)
 	if err != nil {
-		body, _ := io.ReadAll(resp.Body) // Читаем тело ответа
-		return nil, fmt.Errorf("Ошибка при разборе JSON: %s, Ответ: %s", err, body)
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf(Red+"[ERROR]"+Reset+" parse JSON: %s, resp: %s", err, body)
+		return
 	}
 
-	// Извлекаем поддомены
-	var subdomains []string
 	for _, r := range results {
-		if !strings.HasPrefix(r.Name, "*.") {
-			subdomains = append(subdomains, r.Name)
+		select {
+		case out <- r.Name:
+		case <-ctx.Done(): // Прерываем отправку при отмене контекста
+			return
+
+		}
+		if !strings.HasPrefix(r.Name, "*") {
+			out <- r.Name
 		}
 	}
-
-	return subdomains, nil
 }
 
-// ---------------------------- SecurityTrails Finder Func ------------------------------//
+func FetchSecTrails(ctx context.Context, domain string, out chan<- string) {
 
-type SecurityTrailsResponse struct {
-	Subdomains []string `json:"subdomains"`
-}
+	type Config struct {
+		ApiKey string `json:"api_key"`
+	}
 
-func FindSecTrails(domain, API_KEY string) ([]string, error) {
+	data, err := ioutil.ReadFile("config.json")
+	if err != nil {
+		log.Fatal(Red + "[ERROR]" + Reset + " config.json not exist\nPlease Create config.json on these direcotry and write {\"api_key\":\"API-Key from SecurityTrails API\"}")
+	}
+
+	var config Config
+	err = json.Unmarshal(data, &config)
+	if err != nil || config.ApiKey == "" {
+		log.Fatal(Red + "[ERROR]" + Reset + "API key not found\nPlease Create config.json on these direcotry and write {\"api_key\":\"API-Key from SecurityTrails API\"}")
+	}
+
 	url := fmt.Sprintf("https://api.securitytrails.com/v1/domain/%s/subdomains", domain)
-
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		log.Println(Red+"[ERROR]"+Reset, err)
+		return
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("APIKEY", API_KEY)
+	req.Header.Set("APIKEY", config.ApiKey)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
 
-	client := http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		log.Println(Red+"[ERROR]"+Reset, "Request failed", err)
+		return
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf(Red+"[ERROR]"+Reset, "Bad Status code to connect SecurityTrlais: %d", resp.StatusCode)
+		return
+	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		log.Printf(Red+"[ERROR]"+Reset, "reading response %v", err)
+		return
 	}
 
-	var result SecurityTrailsResponse
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		return nil, err
+	var results struct {
+		Subdomains []string `json:"subdomains"`
+		Error      string   `json:"error"`
 	}
 
-	var subdomains []string
-	for _, sub := range result.Subdomains {
-		subdomains = append(subdomains, fmt.Sprintf("%s.%s", sub, domain))
+	if err := json.Unmarshal(body, &results); err != nil {
+		log.Printf(Red+"[ERROR]"+Reset, "JSON decode error %v", err)
+		return
 	}
 
-	return subdomains, nil
+	if results.Error != "" {
+		log.Printf(Red+"[ERROR]"+Reset, "API eror %s", results.Error)
+		return
+	}
+
+	for _, sub := range results.Subdomains {
+		fullDomain := fmt.Sprintf("%s.%s", sub, domain)
+		select {
+		case out <- fullDomain:
+		case <-ctx.Done(): // Прерываем отправку при отмене контекста
+			return
+		}
+	}
+
 }
