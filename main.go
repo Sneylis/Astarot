@@ -2,6 +2,7 @@ package main
 
 import (
 	"Astarot/core"
+	"Astarot/proxy"
 	"Astarot/recon/passive"
 	"bufio"
 	"context"
@@ -31,6 +32,13 @@ var cfg = Config{
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Load proxies if available
+	if err := proxy.Load("Proxy.txt"); err == nil {
+		log.Printf("Loaded %d proxies", proxy.Count())
+	} else {
+		log.Printf("Proxy list not loaded: %v", err)
+	}
 
 	//banner
 	var domain string
@@ -100,21 +108,13 @@ func main() {
 }
 
 func checkDomains(ctx context.Context, in <-chan string, out chan<- string, workerID int) {
-	client := &http.Client{
-		Timeout: cfg.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  true,
-			MaxIdleConnsPerHost: 10,
-		},
-	}
 
 	for domain := range in {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+			client := proxy.NewClient(cfg.Timeout)
 			if checkDomain(ctx, client, domain, workerID) {
 				out <- domain
 			}
