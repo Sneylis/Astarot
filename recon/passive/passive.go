@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"Astarot/proxy"
 )
 
 const (
@@ -29,7 +31,7 @@ func FetchCrtSH(ctx context.Context, domain string, out chan<- string) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := proxy.NewClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
@@ -95,7 +97,7 @@ func FetchSecTrails(ctx context.Context, domain string, out chan<- string) {
 	req.Header.Set("APIKEY", config.ApiKey)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := proxy.NewClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(Red+"[ERROR]"+Reset, "Request failed", err)
