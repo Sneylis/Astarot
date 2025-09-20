@@ -8,6 +8,6 @@ require (
 	github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89 // indirect
 	github.com/projectdiscovery/httpx v1.6.10 // indirect
 	github.com/rverton/webanalyze v0.4.1 // indirect
-	golang.org/x/net v0.34.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.44.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 )
