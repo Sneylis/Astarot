@@ -5,3 +5,4 @@ live_domains.txt
 .vs
 tmp/raw.txt
 tmp/alive.txt
+proxies.txt
