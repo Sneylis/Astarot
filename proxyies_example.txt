@@ -1,0 +1,5 @@
+# поддерживаются http(s) и socks5
+http://127.0.0.1:8080
+http://user:pass@10.10.10.10:3128
+https://proxy.company.local:443
+socks5://127.0.0.1:9050
