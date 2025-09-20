@@ -1,13 +1,13 @@
+// recon/passive/passive.go
 package passive
 
 import (
-	core "Astarot/core/Analyze"
-	"bufio"
+	core "Astarot/core/Analyze" // <— поправь путь под свой module
+	probe "Astarot/core/Checker"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -31,25 +31,23 @@ var cfg = Config{
 }
 
 const (
-	Red   = "\033[31m"
-	Green = "\033[32m"
-	Reset = "\033[0m"
+	RED   = "\033[31m"
+	GREEN = "\033[32m"
+	RESET = "\033[0m"
 )
 
-func FetchCrtSH(ctx context.Context, domain string, out chan<- string) {
+func Passvie_Url_Crt_sh(ctx context.Context, domain string, out chan<- string) {
 
 	url := fmt.Sprintf("https://crt.sh/?q=%%.%s&output=json", domain)
-	defer close(out)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
@@ -59,233 +57,158 @@ func FetchCrtSH(ctx context.Context, domain string, out chan<- string) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf(Red+"[ERROR]"+Reset+"Crt.sh return error: %d, resp: %s", resp.StatusCode, body)
+		log.Printf(RED+"[ERROR]"+RESET+" Crt.sh return error: %d, resp: %s", resp.StatusCode, body)
 		return
 	}
 
 	var results []struct {
 		Name string `json:"name_value"`
 	}
-
-	err = json.NewDecoder(resp.Body).Decode(&results)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf(Red+"[ERROR]"+Reset+" parse JSON: %s, resp: %s", err, body)
+		log.Printf("[ERROR] parse JSON: %s, resp: %s", err, body)
 		return
 	}
 
 	for _, r := range results {
+		if strings.HasPrefix(r.Name, "*") {
+			continue
+		}
 		select {
 		case out <- r.Name:
-		case <-ctx.Done(): // Прерываем отправку при отмене контекста
+		case <-ctx.Done():
 			return
-
-		}
-		if !strings.HasPrefix(r.Name, "*") {
-			out <- r.Name
 		}
 	}
+	fmt.Println(GREEN + "[INFO]" + RESET + " Crt.sh done")
 }
 
 func FetchSecTrails(ctx context.Context, domain string, out chan<- string) {
 
+	// --- конфиг / API key ---
 	type Config struct {
-		ApiKey string `json:"api_key"`
+		APIKey string `json:"api_key"`
 	}
 
-	data, err := ioutil.ReadFile("config.json")
-	if err != nil {
-		log.Fatal(Red + "[ERROR]" + Reset + " config.json not exist\nPlease Create config.json on these direcotry and write {\"api_key\":\"API-Key from SecurityTrails API\"}")
+	key := os.Getenv("SECURITYTRAILS_API_KEY")
+	if key == "" {
+		data, err := os.ReadFile("config.json")
+		if err == nil {
+			var c Config
+			if err := json.Unmarshal(data, &c); err == nil {
+				key = strings.TrimSpace(c.APIKey)
+			}
+		}
 	}
-
-	var config Config
-	err = json.Unmarshal(data, &config)
-	if err != nil || config.ApiKey == "" {
-		log.Fatal(Red + "[ERROR]" + Reset + "API key not found\nPlease Create config.json on these direcotry and write {\"api_key\":\"API-Key from SecurityTrails API\"}")
-	}
-
-	url := fmt.Sprintf("https://api.securitytrails.com/v1/domain/%s/subdomains", domain)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Println(Red+"[ERROR]"+Reset, err)
+	if key == "" {
+		log.Println(RED + "[ERROR]" + RESET + " SecurityTrails API key not found (env SECURITYTRAILS_API_KEY or config.json)")
 		return
 	}
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("APIKEY", config.ApiKey)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0")
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+	// --- HTTP запрос ---
+	url := fmt.Sprintf("https://api.securitytrails.com/v1/domain/%s/subdomains", domain)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		log.Println(RED+"[ERROR]"+RESET, "build request:", err)
+		return
 	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("APIKEY", key)
+	req.Header.Set("User-Agent", "Astarot/1.0 (+passive)")
+
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Println(Red+"[ERROR]"+Reset, "Request failed", err)
+		// Проверим: не отменён ли контекст
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		log.Println(RED+"[ERROR]"+RESET, "request failed:", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf(Red+"[ERROR]"+Reset, "Bad Status code to connect SecurityTrlais: %d", resp.StatusCode)
-		return
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf(Red+"[ERROR]"+Reset, "reading response %v", err)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		log.Printf(RED+"[ERROR]"+RESET+" bad status from SecurityTrails: %d; body: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 		return
 	}
 
 	var results struct {
 		Subdomains []string `json:"subdomains"`
 		Error      string   `json:"error"`
+		// иногда приходит поле message
+		Message string `json:"message"`
 	}
 
-	if err := json.Unmarshal(body, &results); err != nil {
-		log.Printf(Red+"[ERROR]"+Reset, "JSON decode error %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		log.Println(RED+"[ERROR]"+RESET, "decode JSON:", err)
 		return
 	}
-
-	if results.Error != "" {
-		log.Printf(Red+"[ERROR]"+Reset, "API eror %s", results.Error)
+	if results.Error != "" || results.Message != "" {
+		log.Printf(RED+"[ERROR]"+RESET+" API error: %s %s", results.Error, results.Message)
 		return
 	}
 
 	for _, sub := range results.Subdomains {
-		fullDomain := fmt.Sprintf("%s.%s", sub, domain)
-		select {
-		case out <- fullDomain:
-		case <-ctx.Done(): // Прерываем отправку при отмене контекста
-			return
-		}
-	}
-
-}
-
-func checkDomains(ctx context.Context, in <-chan string, out chan<- string, workerID int) {
-
-	for domain := range in {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			client := &http.Client{
-				Timeout: 10 * time.Second,
-			}
-			if checkDomain(ctx, client, domain, workerID) {
-				out <- domain
-			}
-		}
-	}
-}
-
-func checkDomain(ctx context.Context, client *http.Client, domain string, workerID int) bool {
-	url := "http://" + domain
-
-	for attempt := 1; attempt <= cfg.MaxRetries; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			log.Printf("[W%d] Error creating request: %v", workerID, err)
-			return false
-		}
-		req.Header.Set("User-Agent", cfg.UserAgent)
-
-		start := time.Now()
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("[W%d] Attempt %d/%d for %s: %v",
-				workerID, attempt, cfg.MaxRetries, domain, err)
-			time.Sleep(time.Duration(attempt) * time.Second)
+		if sub == "" {
 			continue
 		}
-
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-
-		duration := time.Since(start)
-		log.Printf("[W%d] %s - Status: %d, Length: %d, Duration: %s",
-			workerID, domain, resp.StatusCode, len(body), duration.Round(time.Millisecond))
-
-		// Считаем успешными статусы 2xx и 3xx
-		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-			return true
-		}
-	}
-	return false
-}
-
-func saveResults(ctx context.Context, in <-chan string, filename string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	for {
+		full := sub + "." + domain
 		select {
+		case out <- full:
 		case <-ctx.Done():
-			return ctx.Err()
-		case domain, ok := <-in:
-			if !ok {
-				return nil
-			}
-			if _, err := writer.WriteString(domain + "\n"); err != nil {
-				return err
-			}
+			return
 		}
 	}
+	fmt.Println(GREEN + "[INFO]" + RESET + " SecurityTrails done")
 }
 
 func PassiveMain(domain string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	//banner
-	// Инициализируем каналы
 	subdomains := make(chan string)
 	uniqueSubdomains := core.ClearDuplicate(subdomains)
-	checkedDomains := make(chan string)
+	alive := make(chan string)
 
-	// Запускаем сбор данных
 	var fetchersWG sync.WaitGroup
 	fetchersWG.Add(2)
+
 	go func() {
 		defer fetchersWG.Done()
-		FetchCrtSH(ctx, domain, subdomains)
+		Passvie_Url_Crt_sh(ctx, domain, subdomains)
 	}()
 	go func() {
 		defer fetchersWG.Done()
 		FetchSecTrails(ctx, domain, subdomains)
 	}()
 
-	// Закрываем канал subdomains после завершения всех сборщиков
+	// ВАЖНО: закрываем канал, когда оба продюсера закончат
 	go func() {
 		fetchersWG.Wait()
+		close(subdomains)
 	}()
 
-	// Запускаем проверку доменов
-	var checkerWG sync.WaitGroup
-	checkerWG.Add(cfg.Workers)
-	for i := 0; i < cfg.Workers; i++ {
-		go func(id int) {
-			defer checkerWG.Done()
-			checkDomains(ctx, uniqueSubdomains, checkedDomains, id)
-		}(i + 1)
+	if err := core.SaveResults(ctx, uniqueSubdomains, "./tmp/raw.txt"); err != nil {
+		log.Println(RED+"[ERROR]"+RESET, "save alive:", err)
 	}
 
-	// Запускаем запись результатов
-	var writerWG sync.WaitGroup
-	writerWG.Add(1)
 	go func() {
-		defer writerWG.Done()
-		saveResults(ctx, checkedDomains, "live_domains.txt")
+		// proxies.txt — файл с проксями (может не существовать: тогда без прокси)
+		cfg := probe.DefaultAliveConfig()
+		// пример: хотим 120 воркеров и проверять ещё "/health"
+		cfg.Concurrency = 120
+		cfg.Paths = []string{"/", "/health"}
+
+		if err := probe.IS_allive(ctx, "./tmp/raw.txt", "./proxies.txt", alive, cfg); err != nil {
+			log.Println(RED+"[ERROR]"+RESET, "IS_allive:", err)
+		}
 	}()
 
-	// Ожидаем завершения всех компонентов
-	checkerWG.Wait()
-	close(checkedDomains)
-	writerWG.Wait()
+	if err := core.SaveResults(ctx, alive, "./tmp/alive.txt"); err != nil {
+		log.Println(RED+"[ERROR]"+RESET, "save alive:", err)
+	}
 }
