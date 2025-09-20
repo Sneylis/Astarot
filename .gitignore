@@ -2,3 +2,6 @@ config.json
 test.go
 Proxy.json
 live_domains.txt
+.vs
+tmp/raw.txt
+tmp/alive.txt
