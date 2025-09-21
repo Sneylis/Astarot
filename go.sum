@@ -9,6 +9,8 @@ github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89 h1:2pkAuIM8O
 github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89/go.mod h1:/09nEjna1UMoasyyQDhOrIn8hi2v2kiJglPWed1idck=
 github.com/projectdiscovery/httpx v1.6.10 h1:R08LiWDQKJNmVHcR5TdIGQil1O3ShiFonK6Wf+gzg0k=
 github.com/projectdiscovery/httpx v1.6.10/go.mod h1:drsRPt18IQB/Gfj4D0D9woS3hkY+m6k4HgL09JXX4vg=
+github.com/projectdiscovery/wappalyzergo v0.2.47 h1:8cqpgVfby3AlnYDDDFUkuEZRvYCmVZvrKLxSnf09j1Q=
+github.com/projectdiscovery/wappalyzergo v0.2.47/go.mod h1:kPzB+L3ISGO5m8u5fukjlF5FJFJ1NLV86emOx+k3AVU=
 github.com/rverton/webanalyze v0.4.1 h1:4tp7BN/phhILDdTy0oUTsA3aG5cWTljzviLk7fIQIYM=
 github.com/rverton/webanalyze v0.4.1/go.mod h1:GcF5GORMQmysI8vdGyJlc50exWMrfKMunRcZP0dOz7w=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=

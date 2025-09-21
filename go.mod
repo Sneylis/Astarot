@@ -2,6 +2,8 @@ go 1.24.0
 
 module Astarot
 
+require github.com/projectdiscovery/wappalyzergo v0.2.47
+
 require (
 	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/andybalholm/cascadia v1.3.2 // indirect
