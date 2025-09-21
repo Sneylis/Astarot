@@ -2,6 +2,7 @@ package main
 
 import (
 	core "Astarot/core/Analyze"
+	waf "Astarot/core/WafW00f"
 	"Astarot/recon/passive"
 	"fmt"
 )
@@ -27,5 +28,5 @@ func main() {
 	fmt.Scanln(&domain)
 	passive.PassiveMain(domain)
 	core.WappalyzerMain()
-
+	waf.Wafw00fMain()
 }
