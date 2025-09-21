@@ -211,4 +211,5 @@ func PassiveMain(domain string) {
 	if err := core.SaveResults(ctx, alive, "./tmp/alive.txt"); err != nil {
 		log.Println(RED+"[ERROR]"+RESET, "save alive:", err)
 	}
+	fmt.Println(GREEN + "[INFO]" + RESET + "saved results to ./tmp/alive.txt")
 }

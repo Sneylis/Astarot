@@ -307,7 +307,7 @@ func checkOne(parent context.Context, client *http.Client, target string, cfg Al
 				lastErr = err
 				continue
 			}
-			req.Header.Set("User-Agent", "Astarot-Probe/1.0")
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
 
 			resp, err := client.Do(req)
 			if err != nil {
