@@ -87,9 +87,9 @@ func Active(domain string, workersCount int) error {
 		}(i)
 	}
 
-	// Горутина для записи результатов
+	// Горутина для записи результатов во временный файл
 	doneChan := make(chan struct{})
-	go writeResults(resultsChan, doneChan)
+	go writeResults(resultsChan, doneChan, "tmp/active_raw.txt")
 
 	// Ждем завершения всех воркеров
 	wg.Wait()
@@ -296,8 +296,8 @@ func createHTTPClient(proxyInfo *ProxyInfo, timeout time.Duration) (*http.Client
 }
 
 // writeResults записывает живые домены в файл
-func writeResults(resultsChan <-chan string, doneChan chan<- struct{}) {
-	file, err := os.OpenFile("tmp/alive.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+func writeResults(resultsChan <-chan string, doneChan chan<- struct{}, filename string) {
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		fmt.Printf("Ошибка создания файла результатов: %v\n", err)
 		doneChan <- struct{}{}
