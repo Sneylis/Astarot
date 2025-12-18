@@ -1,31 +1,89 @@
+// package main
+
+// import (
+// 	"Astarot/recon/active"
+// 	"Astarot/recon/passive"
+// 	"bufio"
+// 	"flag"
+// 	"fmt"
+// 	"os"
+// 	"strings"
+// )
+
+// func main() {
+// 	// флаги командной строки (аналог sys.argv)
+// 	domainFlag := flag.String("d", "", "Domain to scan (vhost)")
+// 	useProxyFlag := flag.Bool("proxy", false, "Use proxies from proxies.txt for active scan")
+// 	subdomainsFileFlag := flag.String("sublist", "./subList.txt", "File with subdomain names for active scan (one per line)")
+// 	flag.Parse()
+
+// 	var domain string
+// 	if *domainFlag != "" {
+// 		domain = *domainFlag
+// 	} else {
+// 		// если домен не передан флагом — спросим у пользователя
+// 		fmt.Printf("Domain: -> ")
+// 		fmt.Scanln(&domain)
+// 	}
+
+// 	banner := `
+
+// 	▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
+// 	▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
+// 	▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
+// 	░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
+// 	▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
+// 	▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
+// 	▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
+// 	░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
+// 		░  ░      ░                 ░  ░   ░         ░ ░
+
+// 			Recon tool - Astarot v1.0`
+// 	fmt.Println(banner)
+
+// 	// пассивный реконт
+// 	passive.PassiveMain(domain)
+
+// 	// загрузим субдомены в "dictionary" (map[string]struct{})
+// 	subdomains := make(map[string]struct{})
+// 	f, err := os.Open(*subdomainsFileFlag)
+// 	if err == nil {
+// 		defer f.Close()
+// 		sc := bufio.NewScanner(f)
+// 		for sc.Scan() {
+// 			line := strings.TrimSpace(sc.Text())
+// 			if line == "" {
+// 				continue
+// 			}
+// 			// subdomain из файла подставляем в основной domain:
+// 			// line = "www", domain = "example.com" => "www.example.com"
+// 			host := line
+// 			if !strings.HasSuffix(line, "."+domain) {
+// 				host = line + "." + domain
+// 			}
+// 			subdomains[host] = struct{}{}
+// 		}
+// 	}
+
+// 	// активный реконт с vhost и флагом использования прокси
+// 	fmt.Printf("[ACTIVE] start active subdomain recon for %d targets (proxy=%v)\n", len(subdomains), *useProxyFlag)
+// 	_ = active.Active(domain, 13)
+// }
+
 package main
 
 import (
+	"fmt"
+	"log"
+	"os"
+
+	"Astarot/core"
+	Core "Astarot/core/Analyze"
 	"Astarot/recon/active"
 	"Astarot/recon/passive"
-	"bufio"
-	"flag"
-	"fmt"
-	"os"
-	"strings"
 )
 
 func main() {
-	// флаги командной строки (аналог sys.argv)
-	domainFlag := flag.String("d", "", "Domain to scan (vhost)")
-	useProxyFlag := flag.Bool("proxy", false, "Use proxies from proxies.txt for active scan")
-	subdomainsFileFlag := flag.String("sublist", "./subList.txt", "File with subdomain names for active scan (one per line)")
-	flag.Parse()
-
-	var domain string
-	if *domainFlag != "" {
-		domain = *domainFlag
-	} else {
-		// если домен не передан флагом — спросим у пользователя
-		fmt.Printf("Domain: -> ")
-		fmt.Scanln(&domain)
-	}
-
 	banner := `
 
 	▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
@@ -38,34 +96,68 @@ func main() {
 	░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
 		░  ░      ░                 ░  ░   ░         ░ ░
 
-			Recon tool - Astarot v1.0`
+			Recon tool - Astarot v0.4`
 	fmt.Println(banner)
-
-	// пассивный реконт
-	passive.PassiveMain(domain)
-
-	// загрузим субдомены в "dictionary" (map[string]struct{})
-	subdomains := make(map[string]struct{})
-	f, err := os.Open(*subdomainsFileFlag)
-	if err == nil {
-		defer f.Close()
-		sc := bufio.NewScanner(f)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if line == "" {
-				continue
-			}
-			// subdomain из файла подставляем в основной domain:
-			// line = "www", domain = "example.com" => "www.example.com"
-			host := line
-			if !strings.HasSuffix(line, "."+domain) {
-				host = line + "." + domain
-			}
-			subdomains[host] = struct{}{}
-		}
+	// Проверяем аргументы
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: astarot <domain>")
+		fmt.Println("Example: astarot example.com")
+		os.Exit(1)
 	}
 
-	// активный реконт с vhost и флагом использования прокси
-	fmt.Printf("[ACTIVE] start active subdomain recon for %d targets (proxy=%v)\n", len(subdomains), *useProxyFlag)
-	_ = active.Active(domain, 13)
+	domain := os.Args[1]
+	fmt.Printf("\n🎯 Target: %s\n", domain)
+	fmt.Println("=" + "===============================================")
+
+	// Создаем tmp директорию
+	if err := os.MkdirAll("tmp", 0755); err != nil {
+		log.Fatalf("Ошибка создания директории tmp: %v", err)
+	}
+
+	// 1. Passive сканирование
+	fmt.Println("\n📡 Запуск Passive сканирования...")
+	if err := passive.Passive(domain, "tmp/passive_raw.txt"); err != nil {
+		log.Printf("⚠️  Passive сканирование завершилось с ошибкой: %v", err)
+	} else {
+		fmt.Println("✓ Passive сканирование завершено")
+	}
+
+	// 2. Active сканирование
+	fmt.Println("\n🔍 Запуск Active сканирования...")
+	workersCount := 10 // Количество параллельных воркеров
+	if err := active.Active(domain, workersCount); err != nil {
+		log.Printf("⚠️  Active сканирование завершилось с ошибкой: %v", err)
+	} else {
+		fmt.Println("✓ Active сканирование завершено")
+	}
+
+	// 3. Обработка и объединение результатов
+	fmt.Println("\n🔄 Обработка результатов...")
+	if err := core.ProcessResults(
+		"tmp/passive_raw.txt",
+		"tmp/active_raw.txt",
+		"tmp/alive.txt",
+	); err != nil {
+		log.Fatalf("❌ Ошибка обработки результатов: %v", err)
+	}
+
+	// 4. Показываем финальную статистику
+	count, err := core.GetStats("tmp/alive.txt")
+	if err != nil {
+		log.Printf("⚠️  Не удалось получить статистику: %v", err)
+	} else {
+		fmt.Printf("\n📊 Итоговая статистика:\n")
+		fmt.Printf("   Найдено уникальных живых доменов: %d\n", count)
+	}
+
+	// 5. Опционально: удаляем временные файлы
+	// Раскомментируйте если хотите автоматически удалять временные файлы
+	core.CleanupTempFiles("tmp/passive_raw.txt", "tmp/active_raw.txt")
+
+	fmt.Println("🔄 Starting Wappalyzer scan...")
+	Core.WappalyzerMain()
+	fmt.Println("Wappalyzer scan completed")
+
+	fmt.Println("\n✅ Сканирование завершено успешно!")
+	fmt.Println("📁 Результаты сохранены в: tmp/alive.txt")
 }
