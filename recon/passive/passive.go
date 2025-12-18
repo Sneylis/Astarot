@@ -16,20 +16,6 @@ import (
 	"time"
 )
 
-type Config struct {
-	Workers    int
-	Timeout    time.Duration
-	UserAgent  string
-	MaxRetries int
-}
-
-var cfg = Config{
-	Workers:    10,
-	Timeout:    10 * time.Second,
-	UserAgent:  "Mozilla/5.0 (compatible; MyScanner/1.0)",
-	MaxRetries: 1,
-}
-
 const (
 	RED   = "\033[31m"
 	GREEN = "\033[32m"
