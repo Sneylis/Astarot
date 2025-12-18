@@ -7,6 +7,8 @@ github.com/andybalholm/cascadia v1.3.2 h1:3Xi6Dw5lHF15JtdcmAHD3i1+T8plmv7BQ/nsVi
 github.com/andybalholm/cascadia v1.3.2/go.mod h1:7gtRlve5FxPPgIgX36uWBX58OdBsSS6lUvCFb+h7KvU=
 github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89 h1:2pkAuIM8OF1fy4ToFpMnI4oE+VeUNRbGrpSLKshK0oQ=
 github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89/go.mod h1:/09nEjna1UMoasyyQDhOrIn8hi2v2kiJglPWed1idck=
+github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
+github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
 github.com/projectdiscovery/httpx v1.6.10 h1:R08LiWDQKJNmVHcR5TdIGQil1O3ShiFonK6Wf+gzg0k=
 github.com/projectdiscovery/httpx v1.6.10/go.mod h1:drsRPt18IQB/Gfj4D0D9woS3hkY+m6k4HgL09JXX4vg=
 github.com/projectdiscovery/wappalyzergo v0.2.47 h1:8cqpgVfby3AlnYDDDFUkuEZRvYCmVZvrKLxSnf09j1Q=

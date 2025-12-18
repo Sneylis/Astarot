@@ -3,9 +3,11 @@ test.go
 Proxy.json
 live_domains.txt
 .vs
-tmp/raw.txt
+tmp/active_raw.txt
+tmp/passive_raw.txt
 tmp/alive.txt
 proxies.txt
 Wappalyzer_SCAN.json
 out/waf/*
 subList.txt
+.env

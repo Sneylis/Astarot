@@ -152,7 +152,7 @@ func WappalyzerScan(ctx context.Context, client *http.Client, target string) (ma
 func WappalyzerMain() {
 	// Параметры
 	input := "./tmp/alive.txt"
-	output := "Wappalyzer_SCAN.json"
+	output := "/tmp/Wappalyzer_SCAN.json"
 	workers := runtime.NumCPU() * 2
 	timeout := 15 * time.Second
 	proxy := os.Getenv("PROXY") // например "socks5://127.0.0.1:9050" или "http://127.0.0.1:8080"
