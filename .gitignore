@@ -8,3 +8,4 @@ tmp/alive.txt
 proxies.txt
 Wappalyzer_SCAN.json
 out/waf/*
+subList.txt
