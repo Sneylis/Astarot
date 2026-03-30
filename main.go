@@ -1,163 +1,170 @@
-// package main
-
-// import (
-// 	"Astarot/recon/active"
-// 	"Astarot/recon/passive"
-// 	"bufio"
-// 	"flag"
-// 	"fmt"
-// 	"os"
-// 	"strings"
-// )
-
-// func main() {
-// 	// флаги командной строки (аналог sys.argv)
-// 	domainFlag := flag.String("d", "", "Domain to scan (vhost)")
-// 	useProxyFlag := flag.Bool("proxy", false, "Use proxies from proxies.txt for active scan")
-// 	subdomainsFileFlag := flag.String("sublist", "./subList.txt", "File with subdomain names for active scan (one per line)")
-// 	flag.Parse()
-
-// 	var domain string
-// 	if *domainFlag != "" {
-// 		domain = *domainFlag
-// 	} else {
-// 		// если домен не передан флагом — спросим у пользователя
-// 		fmt.Printf("Domain: -> ")
-// 		fmt.Scanln(&domain)
-// 	}
-
-// 	banner := `
-
-// 	▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
-// 	▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
-// 	▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
-// 	░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
-// 	▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
-// 	▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
-// 	▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
-// 	░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
-// 		░  ░      ░                 ░  ░   ░         ░ ░
-
-// 			Recon tool - Astarot v1.0`
-// 	fmt.Println(banner)
-
-// 	// пассивный реконт
-// 	passive.PassiveMain(domain)
-
-// 	// загрузим субдомены в "dictionary" (map[string]struct{})
-// 	subdomains := make(map[string]struct{})
-// 	f, err := os.Open(*subdomainsFileFlag)
-// 	if err == nil {
-// 		defer f.Close()
-// 		sc := bufio.NewScanner(f)
-// 		for sc.Scan() {
-// 			line := strings.TrimSpace(sc.Text())
-// 			if line == "" {
-// 				continue
-// 			}
-// 			// subdomain из файла подставляем в основной domain:
-// 			// line = "www", domain = "example.com" => "www.example.com"
-// 			host := line
-// 			if !strings.HasSuffix(line, "."+domain) {
-// 				host = line + "." + domain
-// 			}
-// 			subdomains[host] = struct{}{}
-// 		}
-// 	}
-
-// 	// активный реконт с vhost и флагом использования прокси
-// 	fmt.Printf("[ACTIVE] start active subdomain recon for %d targets (proxy=%v)\n", len(subdomains), *useProxyFlag)
-// 	_ = active.Active(domain, 13)
-// }
-
 package main
 
 import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"Astarot/core"
 	Core "Astarot/core/Analyze"
+	"Astarot/core/masscan"
+	"Astarot/core/report"
+	waf "Astarot/core/WafW00f"
 	"Astarot/recon/active"
 	"Astarot/recon/passive"
+	"github.com/joho/godotenv"
 )
 
+const banner = `
+  ▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
+  ▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
+  ▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
+  ░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
+   ▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
+   ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
+    ▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
+    ░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
+        ░  ░      ░                 ░  ░   ░         ░ ░
+
+                  Recon tool - Astarot v0.5`
+
 func main() {
-	banner := `
-
-	▄▄▄        ██████ ▄▄▄█████▓ ▄▄▄       ██▀███   ▒█████  ▄▄▄█████▓
-	▒████▄    ▒██    ▒ ▓  ██▒ ▓▒▒████▄    ▓██ ▒ ██▒▒██▒  ██▒▓  ██▒ ▓▒
-	▒██  ▀█▄  ░ ▓██▄   ▒ ▓██░ ▒░▒██  ▀█▄  ▓██ ░▄█ ▒▒██░  ██▒▒ ▓██░ ▒░
-	░██▄▄▄▄██   ▒   ██▒░ ▓██▓ ░ ░██▄▄▄▄██ ▒██▀▀█▄  ▒██   ██░░ ▓██▓ ░
-	▓█   ▓██▒▒██████▒▒  ▒██▒ ░  ▓█   ▓██▒░██▓ ▒██▒░ ████▓▒░  ▒██▒ ░
-	▒▒   ▓▒█░▒ ▒▓▒ ▒ ░  ▒ ░░    ▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▒░▒░   ▒ ░░
-	▒   ▒▒ ░░ ░▒  ░ ░    ░      ▒   ▒▒ ░  ░▒ ░ ▒░  ░ ▒ ▒░     ░
-	░   ▒   ░  ░  ░    ░        ░   ▒     ░░   ░ ░ ░ ░ ▒    ░
-		░  ░      ░                 ░  ░   ░         ░ ░
-
-			Recon tool - Astarot v0.4`
 	fmt.Println(banner)
-	// Проверяем аргументы
+
+	// Загружаем .env если существует (ошибку игнорируем — файл необязателен)
+	_ = godotenv.Load()
+
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: astarot <domain>")
+		fmt.Println("\nUsage: astarot <domain>")
 		fmt.Println("Example: astarot example.com")
 		os.Exit(1)
 	}
 
 	domain := os.Args[1]
-	fmt.Printf("\n🎯 Target: %s\n", domain)
-	fmt.Println("=" + "===============================================")
+	fmt.Printf("\nTarget: %s\n", domain)
+	fmt.Println("================================================")
 
-	// Создаем tmp директорию
-	if err := os.MkdirAll("tmp", 0755); err != nil {
-		log.Fatalf("Ошибка создания директории tmp: %v", err)
+	// Создаём выходные директории
+	for _, dir := range []string{"tmp", "out/waf"} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.Fatalf("Не удалось создать директорию %s: %v", dir, err)
+		}
 	}
 
-	// 1. Passive сканирование
-	fmt.Println("\n📡 Запуск Passive сканирования...")
-	if err := passive.Passive(domain, "tmp/passive_raw.txt"); err != nil {
-		log.Printf("⚠️  Passive сканирование завершилось с ошибкой: %v", err)
-	} else {
-		fmt.Println("✓ Passive сканирование завершено")
-	}
+	const (
+		rawFile        = "tmp/raw_result.txt"
+		resultFile     = "tmp/result.txt"
+		portsFile      = "tmp/Ports.txt"
+		wappalyzerFile = "tmp/Wappalyzer.json"
+	)
 
-	// 2. Active сканирование
-	fmt.Println("\n🔍 Запуск Active сканирования...")
-	workersCount := 10 // Количество параллельных воркеров
-	if err := active.Active(domain, workersCount); err != nil {
-		log.Printf("⚠️  Active сканирование завершилось с ошибкой: %v", err)
-	} else {
-		fmt.Println("✓ Active сканирование завершено")
-	}
+	// ─────────────────────────────────────────────────────────────
+	// Предподготовка: проверка прокси (до горутин, интерактивно)
+	// ─────────────────────────────────────────────────────────────
+	fmt.Println("\n[Подготовка] Проверка прокси...")
+	proxies, runBrute := active.PrepareProxies()
 
-	// 3. Обработка и объединение результатов
-	fmt.Println("\n🔄 Обработка результатов...")
-	if err := core.ProcessResults(
-		"tmp/passive_raw.txt",
-		"tmp/active_raw.txt",
-		"tmp/alive.txt",
-	); err != nil {
-		log.Fatalf("❌ Ошибка обработки результатов: %v", err)
-	}
+	// ─────────────────────────────────────────────────────────────
+	// Фаза 1: Passive + Active брутфорс (параллельно)
+	// Оба пишут в один файл raw_result.txt через SafeWriter.
+	// ─────────────────────────────────────────────────────────────
+	fmt.Println("\n[Фаза 1] Passive сбор + Active брутфорс (параллельно)")
 
-	// 4. Показываем финальную статистику
-	count, err := core.GetStats("tmp/alive.txt")
+	w, err := core.NewSafeWriter(rawFile)
 	if err != nil {
-		log.Printf("⚠️  Не удалось получить статистику: %v", err)
-	} else {
-		fmt.Printf("\n📊 Итоговая статистика:\n")
-		fmt.Printf("   Найдено уникальных живых доменов: %d\n", count)
+		log.Fatalf("Не удалось создать %s: %v", rawFile, err)
 	}
 
-	// 5. Опционально: удаляем временные файлы
-	// Раскомментируйте если хотите автоматически удалять временные файлы
-	core.CleanupTempFiles("tmp/passive_raw.txt", "tmp/active_raw.txt")
+	var phase1 sync.WaitGroup
+	phase1.Add(2)
 
-	fmt.Println("🔄 Starting Wappalyzer scan...")
-	Core.WappalyzerMain()
-	fmt.Println("Wappalyzer scan completed")
+	go func() {
+		defer phase1.Done()
+		if err := passive.Passive(domain, w); err != nil {
+			log.Printf("[1.1] Passive ошибка: %v", err)
+		}
+	}()
 
-	fmt.Println("\n✅ Сканирование завершено успешно!")
-	fmt.Println("📁 Результаты сохранены в: tmp/alive.txt")
+	go func() {
+		defer phase1.Done()
+		if err := active.Active(domain, 10, w, proxies, runBrute); err != nil {
+			log.Printf("[1.2] Active ошибка: %v", err)
+		}
+	}()
+
+	phase1.Wait()
+
+	if err := w.Close(); err != nil {
+		log.Printf("Ошибка закрытия raw_result.txt: %v", err)
+	}
+	fmt.Println("\n[Фаза 1] Завершена.")
+
+	// ─────────────────────────────────────────────────────────────
+	// Фаза 2: Дедупликация + проверка живых хостов
+	// Читает raw_result.txt → пишет result.txt.
+	// ─────────────────────────────────────────────────────────────
+	fmt.Println("\n[Фаза 2] Дедупликация и alive-check...")
+
+	if err := core.DedupeAndCheckAlive(rawFile, resultFile, "proxies.txt"); err != nil {
+		log.Fatalf("[Фаза 2] Ошибка: %v", err)
+	}
+
+	count, _ := core.GetStats(resultFile)
+	fmt.Printf("[Фаза 2] Готово. Живых хостов: %d → %s\n", count, resultFile)
+
+	// ─────────────────────────────────────────────────────────────
+	// Фаза 3: Masscan + WAF + Wappalyzer (параллельно)
+	// Все три модуля читают result.txt.
+	// ─────────────────────────────────────────────────────────────
+	fmt.Println("\n[Фаза 3] Masscan + WAF + Wappalyzer (параллельно)")
+
+	var phase3 sync.WaitGroup
+	phase3.Add(3)
+
+	go func() {
+		defer phase3.Done()
+		fmt.Println("[1.4] Запуск masscan...")
+		if err := masscan.Scan(resultFile, portsFile); err != nil {
+			log.Printf("[1.4] Masscan ошибка: %v", err)
+		}
+	}()
+
+	go func() {
+		defer phase3.Done()
+		fmt.Println("[1.5] Запуск WAF детектора...")
+		waf.Wafw00fMain(resultFile)
+	}()
+
+	go func() {
+		defer phase3.Done()
+		fmt.Println("[1.6] Запуск Wappalyzer...")
+		Core.WappalyzerMain(resultFile, wappalyzerFile)
+	}()
+
+	phase3.Wait()
+
+	// ─────────────────────────────────────────────────────────────
+	// Фаза 4: Генерация HTML-отчёта
+	// Объединяет Wappalyzer + masscan + WAF в один report.html
+	// ─────────────────────────────────────────────────────────────
+	fmt.Println("\n[Фаза 4] Генерация HTML-отчёта...")
+	reportFile := "report.html"
+
+	r, err := report.Build(domain, wappalyzerFile, portsFile, "out/waf")
+	if err != nil {
+		log.Printf("[Фаза 4] Ошибка сборки отчёта: %v", err)
+	} else if err := report.GenerateHTML(r, reportFile); err != nil {
+		log.Printf("[Фаза 4] Ошибка генерации HTML: %v", err)
+	} else {
+		fmt.Printf("[Фаза 4] Отчёт сохранён → %s\n", reportFile)
+	}
+
+	fmt.Println("\n================================================")
+	fmt.Println("Сканирование завершено!")
+	fmt.Printf("  Домены:      %s\n", resultFile)
+	fmt.Printf("  Порты:       %s\n", portsFile)
+	fmt.Printf("  WAF:         out/waf/\n")
+	fmt.Printf("  Wappalyzer:  %s\n", wappalyzerFile)
+	fmt.Printf("  Отчёт:       %s\n", reportFile)
 }
