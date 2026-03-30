@@ -18,29 +18,31 @@ import (
 )
 
 type AliveConfig struct {
-	Concurrency      int           // число воркеров
-	Timeout          time.Duration // общий таймаут запроса
-	Retries          int           // ретраи на сетевые/5xx
-	FollowRedirects  bool          // следовать редиректам
-	HeadFirst        bool          // сначала HEAD, если 405/403 — фоллбэк на GET
-	AcceptMin        int           // min HTTP код (включ.)
-	AcceptMax        int           // max HTTP код (включ.)
-	TryHTTPSThenHTTP bool          // если во входе хост, пробуем https:// и http://
-	Paths            []string      // пути для проверки (обычно ["/"])
+	Concurrency        int           // число воркеров
+	Timeout            time.Duration // общий таймаут запроса
+	Retries            int           // ретраи на сетевые/5xx
+	FollowRedirects    bool          // следовать редиректам
+	HeadFirst          bool          // сначала HEAD, если 405/403 — фоллбэк на GET
+	AcceptMin          int           // min HTTP код (включ.)
+	AcceptMax          int           // max HTTP код (включ.)
+	TryHTTPSThenHTTP   bool          // если во входе хост, пробуем https:// и http://
+	Paths              []string      // пути для проверки (обычно ["/"])
+	InsecureSkipVerify bool          // пропустить проверку TLS сертификата (нужно для recon)
 }
 
 // разумные дефолты
 func DefaultAliveConfig() AliveConfig {
 	return AliveConfig{
-		Concurrency:      80,
-		Timeout:          7 * time.Second,
-		Retries:          1,
-		FollowRedirects:  true,
-		HeadFirst:        true,
-		AcceptMin:        200,
-		AcceptMax:        399,
-		TryHTTPSThenHTTP: true,
-		Paths:            []string{"/"},
+		Concurrency:        80,
+		Timeout:            7 * time.Second,
+		Retries:            1,
+		FollowRedirects:    true,
+		HeadFirst:          true,
+		AcceptMin:          200,
+		AcceptMax:          399,
+		TryHTTPSThenHTTP:   true,
+		Paths:              []string{"/"},
+		InsecureSkipVerify: true,
 	}
 }
 
@@ -248,7 +250,8 @@ func buildClient(proxyURL *url.URL, cfg AliveConfig) *http.Client {
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: cfg.InsecureSkipVerify,
 		},
 	}
 

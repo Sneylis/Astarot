@@ -11,75 +11,66 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"Astarot/core"
 )
 
-// Passive выполняет passive reconnaissance и сохраняет в файл
-// БЕЗ дедупликации и БЕЗ добавления https:// - это делается в core.ProcessResults
-func Passive(domain string, outputFile string) error {
-	fmt.Printf("\n[*] Запуск Passive сканирования для: %s\n", domain)
+// Passive выполняет passive reconnaissance и пишет найденные домены в w.
+// Дедупликация и alive-check выполняются позже в core.DedupeAndCheckAlive.
+func Passive(domain string, w *core.SafeWriter) error {
+	fmt.Printf("\n[*] Passive сканирование: %s\n", domain)
 	fmt.Println(strings.Repeat("=", 60))
-
-	// Открываем файл для записи
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return fmt.Errorf("ошибка создания файла: %v", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
 
 	var allResults []string
 	startTime := time.Now()
 
 	// 1. Certificate Transparency (crt.sh)
-	fmt.Println("\n[1/6] 🔍 Проверка Certificate Transparency (crt.sh)...")
+	fmt.Println("\n[1/6] Проверка Certificate Transparency (crt.sh)...")
 	ctResults := getCrtSh(domain)
 	allResults = append(allResults, ctResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(ctResults))
 
-	// 2. Certificate Transparency (альтернативный источник)
-	fmt.Println("\n[2/6] 🔍 Проверка Censys Certificate Search...")
+	// 2. Certificate Transparency (альтернативный источник — заглушка)
+	fmt.Println("\n[2/6] Проверка Censys Certificate Search...")
 	censysResults := getCertificateTransparency(domain)
 	allResults = append(allResults, censysResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(censysResults))
 
-	// 3. Проверка DNS записей
-	fmt.Println("\n[3/6] 🔍 Проверка DNS записей...")
+	// 3. DNS записи (HackerTarget)
+	fmt.Println("\n[3/6] Проверка DNS записей (HackerTarget)...")
 	dnsResults := getDNSRecords(domain)
 	allResults = append(allResults, dnsResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(dnsResults))
 
 	// 4. Web Archive (Wayback Machine)
-	fmt.Println("\n[4/6] 🔍 Проверка Web Archive (Wayback Machine)...")
+	fmt.Println("\n[4/6] Проверка Web Archive (Wayback Machine)...")
 	archiveResults := getWaybackMachine(domain)
 	allResults = append(allResults, archiveResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(archiveResults))
 
 	// 5. SecurityTrails API
-	fmt.Println("\n[5/6] 🔍 Проверка SecurityTrails API...")
+	fmt.Println("\n[5/6] Проверка SecurityTrails API...")
 	stResults := getSecurityTrails(domain)
 	allResults = append(allResults, stResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(stResults))
 
 	// 6. VirusTotal API
-	fmt.Println("\n[6/6] 🔍 Проверка VirusTotal API...")
+	fmt.Println("\n[6/6] Проверка VirusTotal API...")
 	vtResults := getVirusTotal(domain)
 	allResults = append(allResults, vtResults...)
 	fmt.Printf("      └─ Найдено: %d доменов\n", len(vtResults))
 
-	// Записываем все результаты (с возможными дубликатами)
+	// Записываем все результаты в общий SafeWriter
 	for _, result := range allResults {
-		if _, err := writer.WriteString(result + "\n"); err != nil {
+		if err := w.WriteLine(result); err != nil {
 			return fmt.Errorf("ошибка записи: %v", err)
 		}
 	}
 
 	elapsed := time.Since(startTime)
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Printf("\n[✓] Passive сканирование завершено за %s\n", elapsed.Round(time.Second))
-	fmt.Printf("[+] Всего найдено: %d результатов (с дубликатами)\n", len(allResults))
-	fmt.Printf("[+] Сохранено в: %s\n\n", outputFile)
+	fmt.Printf("\n[✓] Passive завершён за %s\n", elapsed.Round(time.Second))
+	fmt.Printf("[+] Всего найдено: %d результатов\n\n", len(allResults))
 
 	return nil
 }
@@ -121,7 +112,6 @@ func getCrtSh(domain string) []string {
 
 	seen := make(map[string]bool)
 	for _, entry := range entries {
-		// Разбиваем по \n так как может быть несколько доменов
 		domains := strings.Split(entry.NameValue, "\n")
 		for _, d := range domains {
 			d = strings.TrimSpace(d)
@@ -137,26 +127,18 @@ func getCrtSh(domain string) []string {
 }
 
 // ============================================================================
-// 2. Certificate Transparency - альтернативный метод
+// 2. Certificate Transparency — альтернативный метод (заглушка)
 // ============================================================================
 func getCertificateTransparency(domain string) []string {
-	var results []string
-
-	// Можно добавить другие CT log источники здесь
-	// Например: Censys, Facebook CT, Google CT
-
-	return results
+	// TODO: добавить Censys / Facebook CT / Google CT
+	return nil
 }
 
 // ============================================================================
-// 3. DNS Records
+// 3. DNS Records (HackerTarget)
 // ============================================================================
 func getDNSRecords(domain string) []string {
 	var results []string
-
-	// Используем DNS API для поиска записей
-	// Например через DNSDumpster API (требует регистрации)
-	// Или через HackerTarget API
 
 	client := createHTTPClient(10 * time.Second)
 	url := fmt.Sprintf("https://api.hackertarget.com/hostsearch/?q=%s", domain)
@@ -245,7 +227,6 @@ type SecurityTrailsResponse struct {
 func getSecurityTrails(domain string) []string {
 	var results []string
 
-	// Читаем API ключ из переменной окружения или config файла
 	apiKey := os.Getenv("SECURITYTRAILS_API_KEY")
 	if apiKey == "" {
 		fmt.Println("      [!] SECURITYTRAILS_API_KEY не установлен, пропускаем")
@@ -281,8 +262,7 @@ func getSecurityTrails(domain string) []string {
 
 	for _, subdomain := range stResp.Subdomains {
 		if subdomain != "" {
-			fullDomain := subdomain + "." + domain
-			results = append(results, fullDomain)
+			results = append(results, subdomain+"."+domain)
 		}
 	}
 
@@ -301,7 +281,6 @@ type VirusTotalResponse struct {
 func getVirusTotal(domain string) []string {
 	var results []string
 
-	// Читаем API ключ из переменной окружения
 	apiKey := os.Getenv("VIRUSTOTAL_API_KEY")
 	if apiKey == "" {
 		fmt.Println("      [!] VIRUSTOTAL_API_KEY не установлен, пропускаем")

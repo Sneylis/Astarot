@@ -14,236 +14,242 @@ import (
 	"time"
 
 	"golang.org/x/net/proxy"
+
+	"Astarot/core"
 )
 
+// proxyCheckURL используется для валидации прокси — доступный, надёжный хост.
+const proxyCheckURL = "http://example.com"
+
+// ProxyInfo хранит данные об одной прокси.
 type ProxyInfo struct {
 	URL       string
 	ProxyType string // "socks5" or "http"
-	Used      int
-	LastUsed  time.Time
 }
 
+// ProxyPool управляет ротацией прокси.
 type ProxyPool struct {
-	proxies       []*ProxyInfo
-	mu            sync.Mutex
-	currentIndex  int
-	requestsCount int
-	maxRequests   int // 3-4 запроса на прокси
+	proxies      []*ProxyInfo
+	mu           sync.Mutex
+	currentIndex int
+	reqCount     int
+	maxRequests  int // запросов на одну прокси перед ротацией
 }
 
-// Active выполняет активный перебор субдоменов через прокси
-func Active(domain string, workersCount int) error {
-	// Читаем прокси
-	proxies, err := loadProxies("proxies.txt")
-	if err != nil {
-		return fmt.Errorf("ошибка загрузки прокси: %v", err)
+// PrepareProxies загружает и валидирует прокси, при необходимости задаёт вопрос пользователю.
+// Вызывать ДО запуска горутин, чтобы CLI-вопрос не перебивался параллельным выводом.
+// Возвращает (валидные прокси, запускать ли брутфорс).
+func PrepareProxies() ([]*ProxyInfo, bool) {
+	rawProxies, _ := loadProxies("proxies.txt")
+	validProxies := validateProxies(rawProxies)
+
+	if len(validProxies) == 0 {
+		fmt.Print("\n[?] Рабочие прокси не найдены. Запустить брутфорс без прокси? (y/n): ")
+		var answer string
+		fmt.Scanln(&answer)
+		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			return nil, false
+		}
+		return nil, true // брутфорс без прокси
 	}
 
-	if len(proxies) == 0 {
-		return fmt.Errorf("не найдено прокси в файле proxies.txt")
+	fmt.Printf("[✓] Рабочих прокси: %d\n", len(validProxies))
+	return validProxies, true
+}
+
+// Active выполняет активный брутфорс субдоменов с заранее подготовленными прокси.
+// proxies и runBrute получаются из PrepareProxies() — до запуска горутин.
+func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*ProxyInfo, runBrute bool) error {
+	if !runBrute {
+		fmt.Println("[!] Активный брутфорс пропущен.")
+		return nil
 	}
 
-	// Читаем список субдоменов
+	var pool *ProxyPool
+	if len(proxies) > 0 {
+		pool = newPool(proxies, 0) // maxRequests вычислится после загрузки субдоменов
+	} else {
+		fmt.Println("[*] Запуск без прокси...")
+	}
+
+	// 3. Загрузить субдомены
 	subdomains, err := loadSubdomains("subList.txt")
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки субдоменов: %v", err)
 	}
-
 	if len(subdomains) == 0 {
-		return fmt.Errorf("не найдено субдоменов в файле subList.txt")
+		return fmt.Errorf("субдомены не найдены в subList.txt")
+	}
+	fmt.Printf("[*] Субдоменов для брутфорса: %d\n", len(subdomains))
+
+	// Настроить распределение запросов по прокси
+	if pool != nil {
+		pool.maxRequests = len(subdomains) / len(proxies)
+		if pool.maxRequests < 1 {
+			pool.maxRequests = 1
+		}
 	}
 
-	// Создаем пул прокси с умной ротацией
-	pool := &ProxyPool{
-		proxies:      proxies,
-		maxRequests:  3 + len(proxies)%2, // 3-4 запроса в зависимости от количества
-		currentIndex: 0,
-	}
-
-	// Создаем tmp директорию если не существует
-	if err := os.MkdirAll("tmp", 0755); err != nil {
-		return fmt.Errorf("ошибка создания директории tmp: %v", err)
-	}
-
-	// Канал для субдоменов и результатов
+	// 4. Запустить воркеры
 	subChan := make(chan string, len(subdomains))
-	resultsChan := make(chan string, 100)
-
-	// Заполняем канал субдоменами
 	for _, sub := range subdomains {
 		subChan <- sub
 	}
 	close(subChan)
 
-	// WaitGroup для воркеров
 	var wg sync.WaitGroup
-
-	// Запускаем воркеры
 	for i := 0; i < workersCount; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func(id int) {
 			defer wg.Done()
-			worker(workerID, domain, subChan, resultsChan, pool)
+			worker(id, domain, subChan, w, pool)
 		}(i)
 	}
 
-	// Горутина для записи результатов во временный файл
-	doneChan := make(chan struct{})
-	go writeResults(resultsChan, doneChan, "tmp/active_raw.txt")
-
-	// Ждем завершения всех воркеров
 	wg.Wait()
-	close(resultsChan)
-	<-doneChan
-
-	fmt.Println("\n[✓] Сканирование завершено!")
+	fmt.Println("\n[✓] Активный брутфорс завершён!")
 	return nil
 }
 
-// loadProxies читает прокси из файла
-func loadProxies(filename string) ([]*ProxyInfo, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var proxies []*ProxyInfo
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		var proxyType string
-		if strings.HasPrefix(line, "socks5://") {
-			proxyType = "socks5"
-		} else if strings.HasPrefix(line, "http://") {
-			proxyType = "http"
-		} else {
-			continue
-		}
-
-		proxies = append(proxies, &ProxyInfo{
-			URL:       line,
-			ProxyType: proxyType,
-			Used:      0,
-			LastUsed:  time.Time{},
-		})
+// validateProxies проверяет каждую прокси параллельно и возвращает только рабочие.
+func validateProxies(proxies []*ProxyInfo) []*ProxyInfo {
+	if len(proxies) == 0 {
+		return nil
 	}
 
-	return proxies, scanner.Err()
+	fmt.Printf("[*] Проверка %d прокси...\n", len(proxies))
+
+	var mu sync.Mutex
+	var valid []*ProxyInfo
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 20) // максимум 20 одновременных проверок
+
+	for _, p := range proxies {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(pi *ProxyInfo) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if isProxyAlive(pi) {
+				mu.Lock()
+				valid = append(valid, pi)
+				mu.Unlock()
+			}
+		}(p)
+	}
+
+	wg.Wait()
+	fmt.Printf("[✓] Рабочих прокси: %d из %d\n", len(valid), len(proxies))
+	return valid
 }
 
-// loadSubdomains читает субдомены из файла
-func loadSubdomains(filename string) ([]string, error) {
-	file, err := os.Open(filename)
+// isProxyAlive делает тестовый запрос через прокси.
+func isProxyAlive(pi *ProxyInfo) bool {
+	client, err := createHTTPClient(pi, 5*time.Second)
 	if err != nil {
-		return nil, err
+		return false
 	}
-	defer file.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	var subdomains []string
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" && !strings.HasPrefix(line, "#") {
-			subdomains = append(subdomains, line)
-		}
+	req, err := http.NewRequestWithContext(ctx, "GET", proxyCheckURL, nil)
+	if err != nil {
+		return false
 	}
 
-	return subdomains, scanner.Err()
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
 }
 
-// getNextProxy возвращает следующую прокси с умной ротацией
+// newPool создаёт ProxyPool из провалидированных прокси.
+func newPool(proxies []*ProxyInfo, maxRequests int) *ProxyPool {
+	return &ProxyPool{
+		proxies:     proxies,
+		maxRequests: maxRequests,
+	}
+}
+
+// getNextProxy возвращает следующую прокси с ротацией.
 func (p *ProxyPool) getNextProxy() *ProxyInfo {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Увеличиваем счетчик запросов
-	p.requestsCount++
-
-	// Если достигли лимита запросов на текущую прокси
-	if p.requestsCount >= p.maxRequests {
-		p.requestsCount = 0
+	p.reqCount++
+	if p.reqCount >= p.maxRequests {
+		p.reqCount = 0
 		p.currentIndex = (p.currentIndex + 1) % len(p.proxies)
-
-		// Если прокси мало (2-3), минимальный перерыв
-		// Если много (10+), даем отдохнуть больше
-		if len(p.proxies) <= 3 {
-			time.Sleep(100 * time.Millisecond)
-		} else {
-			// Вычисляем время отдыха пропорционально количеству прокси
-			restTime := time.Duration(len(p.proxies)*50) * time.Millisecond
-			time.Sleep(restTime)
-		}
 	}
 
-	currentProxy := p.proxies[p.currentIndex]
-	currentProxy.Used++
-	currentProxy.LastUsed = time.Now()
-
-	return currentProxy
+	return p.proxies[p.currentIndex]
 }
 
-// worker обрабатывает субдомены
-func worker(id int, domain string, subChan <-chan string, resultsChan chan<- string, pool *ProxyPool) {
+// worker обрабатывает субдомены из канала.
+func worker(id int, domain string, subChan <-chan string, w *core.SafeWriter, pool *ProxyPool) {
 	for subdomain := range subChan {
 		fullDomain := subdomain + "." + domain
 
-		// Получаем прокси
-		proxyInfo := pool.getNextProxy()
+		var proxyInfo *ProxyInfo
+		if pool != nil {
+			proxyInfo = pool.getNextProxy()
+		}
 
-		// Проверяем хост
 		if isAlive(fullDomain, proxyInfo) {
-			resultsChan <- fullDomain
-			fmt.Printf("[Worker %d] [✓] %s (proxy: %s)\n", id, fullDomain, maskProxy(proxyInfo.URL))
+			_ = w.WriteLine(fullDomain)
+			proxyLabel := "без прокси"
+			if proxyInfo != nil {
+				proxyLabel = maskProxy(proxyInfo.URL)
+			}
+			fmt.Printf("[Worker %d] [✓] %s (%s)\n", id, fullDomain, proxyLabel)
 		}
 	}
 }
 
-// isAlive проверяет, живой ли хост
+// isAlive проверяет хост через HTTPS, затем HTTP. Принимает коды 200-399.
 func isAlive(host string, proxyInfo *ProxyInfo) bool {
-	// Пробуем оба протокола
-	protocols := []string{"https://", "http://"}
+	for _, scheme := range []string{"https://", "http://"} {
+		targetURL := scheme + host
 
-	for _, protocol := range protocols {
-		targetURL := protocol + host
-
-		client, err := createHTTPClient(proxyInfo, 10*time.Second)
+		var (
+			client *http.Client
+			err    error
+		)
+		if proxyInfo != nil {
+			client, err = createHTTPClient(proxyInfo, 10*time.Second)
+		} else {
+			client = createDirectHTTPClient(10 * time.Second)
+		}
 		if err != nil {
 			continue
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
-		if err != nil {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+		if reqErr != nil {
+			cancel()
 			continue
 		}
-
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-		resp, err := client.Do(req)
-		if err != nil {
+		resp, doErr := client.Do(req)
+		cancel()
+		if doErr != nil {
 			continue
 		}
-		defer resp.Body.Close()
+		resp.Body.Close()
 
-		// Считаем живым, если получили ответ с кодом 200-499
-		if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+		// Только успешные и редиректные коды считаются живыми
+		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			return true
 		}
 	}
-
 	return false
 }
 
-// createHTTPClient создает HTTP клиент с прокси
+// createHTTPClient создаёт HTTP клиент с заданной прокси.
 func createHTTPClient(proxyInfo *ProxyInfo, timeout time.Duration) (*http.Client, error) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -253,13 +259,12 @@ func createHTTPClient(proxyInfo *ProxyInfo, timeout time.Duration) (*http.Client
 		}).DialContext,
 	}
 
-	if proxyInfo.ProxyType == "socks5" {
-		// Парсим SOCKS5 прокси
+	switch proxyInfo.ProxyType {
+	case "socks5":
 		proxyURL, err := url.Parse(proxyInfo.URL)
 		if err != nil {
 			return nil, err
 		}
-
 		var auth *proxy.Auth
 		if proxyURL.User != nil {
 			password, _ := proxyURL.User.Password()
@@ -268,17 +273,15 @@ func createHTTPClient(proxyInfo *ProxyInfo, timeout time.Duration) (*http.Client
 				Password: password,
 			}
 		}
-
 		dialer, err := proxy.SOCKS5("tcp", proxyURL.Host, auth, proxy.Direct)
 		if err != nil {
 			return nil, err
 		}
-
-		tr.Dial = func(network, addr string) (net.Conn, error) {
+		tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialer.Dial(network, addr)
 		}
-	} else if proxyInfo.ProxyType == "http" {
-		// HTTP прокси
+
+	case "http":
 		proxyURL, err := url.Parse(proxyInfo.URL)
 		if err != nil {
 			return nil, err
@@ -290,44 +293,87 @@ func createHTTPClient(proxyInfo *ProxyInfo, timeout time.Duration) (*http.Client
 		Transport: tr,
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // Не следуем редиректам
+			return http.ErrUseLastResponse
 		},
 	}, nil
 }
 
-// writeResults записывает живые домены в файл
-func writeResults(resultsChan <-chan string, doneChan chan<- struct{}, filename string) {
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+// createDirectHTTPClient создаёт HTTP клиент без прокси.
+func createDirectHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: (&net.Dialer{
+				Timeout:   timeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+		},
+		Timeout: timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// loadProxies читает прокси из файла. Если файл не существует — возвращает nil без ошибки.
+func loadProxies(filename string) ([]*ProxyInfo, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Printf("Ошибка создания файла результатов: %v\n", err)
-		doneChan <- struct{}{}
-		return
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	defer file.Close()
 
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	for domain := range resultsChan {
-		_, err := writer.WriteString(domain + "\n")
-		if err != nil {
-			fmt.Printf("Ошибка записи в файл: %v\n", err)
+	var proxies []*ProxyInfo
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
+		var proxyType string
+		switch {
+		case strings.HasPrefix(line, "socks5://"):
+			proxyType = "socks5"
+		case strings.HasPrefix(line, "http://"):
+			proxyType = "http"
+		default:
+			continue
+		}
+		proxies = append(proxies, &ProxyInfo{URL: line, ProxyType: proxyType})
 	}
-
-	doneChan <- struct{}{}
+	return proxies, scanner.Err()
 }
 
-// maskProxy маскирует прокси для вывода (скрывает пароль)
+// loadSubdomains читает список субдоменов из файла (по одному на строку).
+func loadSubdomains(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var subs []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" && !strings.HasPrefix(line, "#") {
+			subs = append(subs, line)
+		}
+	}
+	return subs, scanner.Err()
+}
+
+// maskProxy скрывает пароль в URL прокси для вывода в лог.
 func maskProxy(proxyURL string) string {
 	u, err := url.Parse(proxyURL)
 	if err != nil {
 		return proxyURL
 	}
-
 	if u.User != nil {
 		return fmt.Sprintf("%s://%s:***@%s", u.Scheme, u.User.Username(), u.Host)
 	}
-
 	return proxyURL
 }

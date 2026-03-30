@@ -2,147 +2,89 @@ package core
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+
+	probe "Astarot/core/Checker"
 )
 
-// ProcessResults объединяет результаты passive и active сканирования,
-// удаляет дубликаты и добавляет https:// префикс
-func ProcessResults(passiveFile, activeFile, outputFile string) error {
-	fmt.Println("\n[*] Обработка результатов...")
+// DedupeAndCheckAlive reads raw domains from rawFile, performs HTTP alive checks
+// using checker.go, deduplicates results, and writes live URLs to resultFile.
+// proxiesFile is optional — if the file doesn't exist, direct connections are used.
+func DedupeAndCheckAlive(rawFile, resultFile, proxiesFile string) error {
+	fmt.Println("\n[*] Дедупликация и проверка живых хостов...")
 
-	// Используем map для автоматического удаления дубликатов
-	uniqueDomains := make(map[string]struct{})
+	cfg := probe.DefaultAliveConfig()
+	ctx := context.Background()
 
-	// Читаем результаты passive сканирования
-	if err := readDomainsFromFile(passiveFile, uniqueDomains); err != nil {
-		// Если файл не существует, это не критично
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("ошибка чтения passive результатов: %v", err)
+	out := make(chan string, 512)
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- probe.IS_allive(ctx, rawFile, proxiesFile, out, cfg)
+	}()
+
+	// Collect and deduplicate (IS_allive closes out when done)
+	seen := make(map[string]struct{})
+	var results []string
+	for url := range out {
+		if _, ok := seen[url]; !ok {
+			seen[url] = struct{}{}
+			results = append(results, url)
+			fmt.Printf("[✓] Живой: %s\n", url)
 		}
-		fmt.Println("[!] Passive результаты не найдены, пропускаем")
-	} else {
-		fmt.Printf("[+] Загружено passive доменов: %d\n", len(uniqueDomains))
 	}
 
-	// Запоминаем количество после passive
-	passiveCount := len(uniqueDomains)
-
-	// Читаем результаты active сканирования
-	if err := readDomainsFromFile(activeFile, uniqueDomains); err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("ошибка чтения active результатов: %v", err)
-		}
-		fmt.Println("[!] Active результаты не найдены, пропускаем")
-	} else {
-		activeCount := len(uniqueDomains) - passiveCount
-		fmt.Printf("[+] Загружено active доменов: %d\n", activeCount)
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("alive check: %w", err)
 	}
 
-	if len(uniqueDomains) == 0 {
-		return fmt.Errorf("не найдено доменов для обработки")
+	sort.Strings(results)
+
+	if err := writeDomainsToFile(resultFile, results); err != nil {
+		return fmt.Errorf("write result: %w", err)
 	}
 
-	// Преобразуем map в slice для сортировки
-	var domains []string
-	for domain := range uniqueDomains {
-		// Добавляем https:// если его нет
-		if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
-			domain = "https://" + domain
-		}
-		domains = append(domains, domain)
-	}
-
-	// Сортируем для удобства
-	sort.Strings(domains)
-
-	// Записываем в финальный файл
-	if err := writeDomainsToFile(outputFile, domains); err != nil {
-		return fmt.Errorf("ошибка записи результатов: %v", err)
-	}
-
-	fmt.Printf("\n[✓] Обработка завершена!\n")
-	fmt.Printf("[✓] Уникальных доменов: %d\n", len(domains))
-	fmt.Printf("[✓] Результаты сохранены в: %s\n", outputFile)
-
+	fmt.Printf("\n[✓] Живых хостов: %d → %s\n", len(results), resultFile)
 	return nil
 }
 
-// CleanupTempFiles удаляет временные файлы после обработки
-func CleanupTempFiles(files ...string) {
-	for _, file := range files {
-		if err := os.Remove(file); err != nil {
-			if !os.IsNotExist(err) {
-				fmt.Printf("[!] Не удалось удалить временный файл %s: %v\n", file, err)
-			}
-		}
-	}
-}
-
-// readDomainsFromFile читает домены из файла и добавляет в map
-func readDomainsFromFile(filename string, domains map[string]struct{}) error {
-	file, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Удаляем http:// или https:// для нормализации
-		line = strings.TrimPrefix(line, "https://")
-		line = strings.TrimPrefix(line, "http://")
-
-		// Добавляем в map (автоматически удаляются дубликаты)
-		domains[line] = struct{}{}
-	}
-
-	return scanner.Err()
-}
-
-// writeDomainsToFile записывает домены в файл
-func writeDomainsToFile(filename string, domains []string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	for _, domain := range domains {
-		if _, err := writer.WriteString(domain + "\n"); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// GetStats возвращает статистику по файлу с доменами
+// GetStats counts non-empty, non-comment lines in a file.
 func GetStats(filename string) (int, error) {
-	file, err := os.Open(filename)
+	f, err := os.Open(filename)
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
+	defer f.Close()
 
 	count := 0
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
 		if line != "" && !strings.HasPrefix(line, "#") {
 			count++
 		}
 	}
+	return count, sc.Err()
+}
 
-	return count, scanner.Err()
+func writeDomainsToFile(filename string, domains []string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	defer w.Flush()
+
+	for _, d := range domains {
+		if _, err := w.WriteString(d + "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -114,10 +114,9 @@ func slugifyURL(u string) string {
 }
 
 // --- main worker pool that reads alive.txt -------------
-func Wafw00fMain() {
+func Wafw00fMain(aliveFile string) {
 	// config — подредактируй под себя
 	var (
-		aliveFile     = "./tmp/alive.txt"
 		proxyFile     = "proxies.txt" // опционально; если нет — оставь пустым или не создавай
 		outDir        = "out/waf"
 		parallelism   = 8

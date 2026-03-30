@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -25,67 +26,23 @@ const (
 	RESET = "\033[0m"
 )
 
-func ClearDuplicate(input <-chan string) <-chan string {
-	out := make(chan string)
-
-	go func() {
-		defer close(out)
-		seen := make(map[string]bool)
-
-		for item := range input {
-			if !seen[item] {
-				seen[item] = true
-				out <- item
-			}
-		}
-	}()
-	return out
+// TechInfo содержит информацию об обнаруженной технологии.
+type TechInfo struct {
+	Categories []string `json:"categories,omitempty"`
+	Version    string   `json:"version,omitempty"`
+	Website    string   `json:"website,omitempty"`
 }
 
-func SaveResults(ctx context.Context, in <-chan string, filename string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer func() {
-		if err := writer.Flush(); err != nil {
-			log.Println("[WARN] flush error:", err)
-		}
-	}()
-
-	// Слушаем канал и сигнал контекста
-	for {
-		select {
-		case domain, ok := <-in:
-			if !ok {
-				// канал закрыт, значит продюсеры закончили — нормальный выход
-				return nil
-			}
-			if _, err := writer.WriteString(domain + "\n"); err != nil {
-				return err
-			}
-
-		case <-ctx.Done():
-			// Контекст отменён — дочитаем всё, что осталось в канале
-			for domain := range in {
-				if _, err := writer.WriteString(domain + "\n"); err != nil {
-					return err
-				}
-			}
-			return ctx.Err() // вернём причину отмены (можно заменить на nil, если не критично)
-		}
-	}
-}
-
+// Result — данные по одному хосту.
 type Result struct {
-	URL         string                 `json:"url"`
-	Timestamp   string                 `json:"timestamp"`
-	Error       string                 `json:"error,omitempty"`
-	Fingerprint map[string]interface{} `json:"fingerprint,omitempty"`
-	Method      string                 `json:"method"` // passive / wappalyzer
+	URL          string              `json:"url"`
+	Timestamp    string              `json:"timestamp"`
+	StatusCode   int                 `json:"status_code,omitempty"`
+	Title        string              `json:"title,omitempty"`
+	Server       string              `json:"server,omitempty"`
+	PoweredBy    string              `json:"x_powered_by,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	Technologies map[string]TechInfo `json:"technologies,omitempty"`
 }
 
 func newHttpClient(timeout time.Duration, proxyURL string) *http.Client {
@@ -104,60 +61,162 @@ func newHttpClient(timeout time.Duration, proxyURL string) *http.Client {
 			log.Printf(RED+"[WARN]"+RESET+" bad proxy URL %s: %v\n", proxyURL, err)
 		}
 	}
-
-	return &http.Client{
-		Transport: tr,
-		Timeout:   timeout,
-	}
+	return &http.Client{Transport: tr, Timeout: timeout}
 }
 
-// WappalyzerScan: делает HTTP GET и запускает wappalyzer fingerprint.
-// Возвращает fingerprint map (или nil) и ошибку.
-// <- заменяем старую функцию, теперь возвращаем map[string]interface{}
-func WappalyzerScan(ctx context.Context, client *http.Client, target string) (map[string]interface{}, error) {
+// WappalyzerScan делает HTTP GET, собирает технологии, заголовки, title.
+func WappalyzerScan(ctx context.Context, client *http.Client, target string) (Result, error) {
+	result := Result{URL: target}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	req.Header.Set("User-Agent", "Astarot-WappScan/1.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB лимит
+	result.StatusCode = resp.StatusCode
+
+	// Интересные заголовки
+	result.Server = resp.Header.Get("Server")
+	result.PoweredBy = resp.Header.Get("X-Powered-By")
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20)) // 2MB лимит
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
+	// Извлечь title страницы
+	result.Title = extractTitle(body)
+
+	// Wappalyzer fingerprint с категориями
 	wc, err := wapp.New()
-	if err != nil || wc == nil {
-		return nil, fmt.Errorf("wappalyzer init failed: %v", err)
+	if err != nil {
+		return result, fmt.Errorf("wappalyzer init: %v", err)
 	}
 
-	// wc.Fingerprint возвращает map[string]struct{}
-	raw := wc.Fingerprint(resp.Header, body) // map[string]struct{}
+	appInfoMap := wc.FingerprintWithInfo(resp.Header, body)
 
-	// Конвертим в map[string]interface{} чтобы потом JSON'ом писать
-	fp := make(map[string]interface{}, len(raw))
-	for name := range raw {
-		fp[name] = true
+	// Дополняем версиями из заголовков
+	headerVersions := extractVersionsFromHeaders(resp.Header, result.Server, result.PoweredBy)
+
+	result.Technologies = make(map[string]TechInfo, len(appInfoMap))
+	for name, info := range appInfoMap {
+		ti := TechInfo{
+			Categories: info.Categories,
+			Website:    info.Website,
+		}
+		// Если в заголовках нашли версию для этой технологии — добавляем
+		if v, ok := headerVersions[strings.ToLower(name)]; ok {
+			ti.Version = v
+		}
+		result.Technologies[name] = ti
 	}
 
-	return fp, nil
+	// Добавляем технологии из заголовков, которые wappalyzer мог пропустить
+	for techName, version := range headerVersions {
+		normalized := normalizeTechName(techName)
+		if _, exists := result.Technologies[normalized]; !exists {
+			result.Technologies[normalized] = TechInfo{Version: version}
+		}
+	}
+
+	return result, nil
 }
 
-func WappalyzerMain() {
-	// Параметры
-	input := "./tmp/alive.txt"
-	output := "/tmp/Wappalyzer_SCAN.json"
+// extractTitle вытаскивает содержимое тега <title>.
+func extractTitle(body []byte) string {
+	re := regexp.MustCompile(`(?i)<title[^>]*>([^<]{1,200})</title>`)
+	m := re.FindSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(string(m[1]))
+}
+
+// extractVersionsFromHeaders парсит версии из типичных HTTP-заголовков.
+func extractVersionsFromHeaders(headers http.Header, server, poweredBy string) map[string]string {
+	result := make(map[string]string)
+
+	// Server: nginx/1.18.0, Apache/2.4.41 (Ubuntu), openresty/1.19.3.1
+	if server != "" {
+		if v := parseVersion(server); v.name != "" {
+			result[strings.ToLower(v.name)] = v.version
+		}
+	}
+
+	// X-Powered-By: PHP/8.1.2, Express, ASP.NET
+	if poweredBy != "" {
+		if v := parseVersion(poweredBy); v.name != "" {
+			result[strings.ToLower(v.name)] = v.version
+		}
+	}
+
+	// X-AspNet-Version: 4.0.30319
+	if v := headers.Get("X-AspNet-Version"); v != "" {
+		result["asp.net"] = v
+	}
+
+	// X-Generator: WordPress 6.4.2
+	if gen := headers.Get("X-Generator"); gen != "" {
+		if v := parseVersion(gen); v.name != "" {
+			result[strings.ToLower(v.name)] = v.version
+		}
+	}
+
+	// X-Drupal-Cache, X-WordPress-... etc
+	for _, h := range []string{"X-Drupal-Cache", "X-Drupal-Dynamic-Cache"} {
+		if headers.Get(h) != "" {
+			result["drupal"] = ""
+		}
+	}
+
+	return result
+}
+
+type nameVersion struct{ name, version string }
+
+// parseVersion разбирает строки типа "nginx/1.18.0", "PHP/8.1.2", "WordPress 6.4".
+func parseVersion(s string) nameVersion {
+	// "Name/Version" формат
+	re1 := regexp.MustCompile(`^([A-Za-z][A-Za-z0-9._-]+)/(\S+)`)
+	if m := re1.FindStringSubmatch(s); len(m) == 3 {
+		return nameVersion{m[1], m[2]}
+	}
+	// "Name Version" формат
+	re2 := regexp.MustCompile(`^([A-Za-z][A-Za-z0-9._-]+)\s+(\d[\d.]+)`)
+	if m := re2.FindStringSubmatch(s); len(m) == 3 {
+		return nameVersion{m[1], m[2]}
+	}
+	return nameVersion{}
+}
+
+// normalizeTechName капитализирует известные названия.
+func normalizeTechName(s string) string {
+	known := map[string]string{
+		"nginx": "Nginx", "apache": "Apache", "php": "PHP",
+		"wordpress": "WordPress", "drupal": "Drupal", "asp.net": "ASP.NET",
+		"express": "Express", "openresty": "OpenResty",
+	}
+	if v, ok := known[strings.ToLower(s)]; ok {
+		return v
+	}
+	if len(s) > 0 {
+		return strings.ToUpper(s[:1]) + s[1:]
+	}
+	return s
+}
+
+func WappalyzerMain(input, output string) {
 	workers := runtime.NumCPU() * 2
 	timeout := 15 * time.Second
-	proxy := os.Getenv("PROXY") // например "socks5://127.0.0.1:9050" или "http://127.0.0.1:8080"
+	proxyEnv := os.Getenv("PROXY")
 
-	// Читаем список URL'ов
 	f, err := os.Open(input)
 	if err != nil {
 		log.Fatalf(RED+"[FATAL]"+RESET+" can't open %s: %v\n", input, err)
@@ -171,19 +230,14 @@ func WappalyzerMain() {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Гарантируем схему (если без http)
 		if !strings.HasPrefix(line, "http://") && !strings.HasPrefix(line, "https://") {
-			line = "http://" + line
+			line = "https://" + line
 		}
 		targets = append(targets, line)
 	}
-	if err := scanner.Err(); err != nil {
-		log.Printf(RED+"[WARN]"+RESET+" reading %s: %v\n", input, err)
-	}
 
-	client := newHttpClient(timeout, proxy)
+	client := newHttpClient(timeout, proxyEnv)
 
-	// Каналы и пул
 	jobs := make(chan string, len(targets))
 	results := make(chan Result, len(targets))
 	var wg sync.WaitGroup
@@ -192,64 +246,52 @@ func WappalyzerMain() {
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func(id int) {
+		go func() {
 			defer wg.Done()
 			for t := range jobs {
 				start := time.Now().UTC()
 				ctx, cancel := context.WithTimeout(ctxRoot, timeout+5*time.Second)
-				fp, err := WappalyzerScan(ctx, client, t)
+				res, err := WappalyzerScan(ctx, client, t)
 				cancel()
 
-				res := Result{
-					URL:       t,
-					Timestamp: start.Format(time.RFC3339),
-					Method:    "wappalyzer",
-				}
+				res.Timestamp = start.Format(time.RFC3339)
 				if err != nil {
 					res.Error = err.Error()
+					log.Printf(RED+"[ERR]"+RESET+" %s → %s\n", t, err)
 				} else {
-					res.Fingerprint = fp
+					log.Printf("[OK] %s → %d технологий\n", t, len(res.Technologies))
 				}
 				results <- res
 			}
-		}(i)
+		}()
 	}
 
-	// Наполняем джобы
 	for _, t := range targets {
 		jobs <- t
 	}
 	close(jobs)
 
-	// Ждём завершения воркеров в отдельной горутине и закрываем results
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Собираем результаты в мапу/слайс
-	out := make([]Result, 0, len(targets))
+	var out []Result
 	for r := range results {
 		out = append(out, r)
-		// Можно печатать прогресс
-		if r.Error != "" {
-			log.Printf(RED+"[ERR]"+RESET+" %s -> %s\n", r.URL, r.Error)
-		} else {
-			log.Printf("[OK] %s -> %v\n", r.URL, r.Fingerprint)
-		}
 	}
 
-	// Записываем JSON
 	of, err := os.Create(output)
 	if err != nil {
 		log.Fatalf(RED+"[FATAL]"+RESET+" can't create %s: %v\n", output, err)
 	}
+	defer of.Close()
+
 	enc := json.NewEncoder(of)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(out); err != nil {
 		log.Fatalf(RED+"[FATAL]"+RESET+" can't write json: %v\n", err)
 	}
-	of.Close()
 
-	log.Printf("done. results -> %s\n", output)
+	log.Printf("Wappalyzer done → %s\n", output)
 }

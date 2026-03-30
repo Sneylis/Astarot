@@ -11,3 +11,4 @@ Wappalyzer_SCAN.json
 out/waf/*
 subList.txt
 .env
+.claude
