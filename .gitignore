@@ -12,3 +12,4 @@ out/waf/*
 subList.txt
 .env
 .claude
+report.html
