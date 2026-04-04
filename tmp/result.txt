@@ -10,6 +10,8 @@ http://meet.rvision.ru/
 http://rvision.ru/
 http://support.rvision.ru/
 http://vds.rvision.ru/
+http://www.bezopashka.rvision.ru/
+http://www.career.rvision.ru/
 http://www.rvision.ru/
 https://autodiscover.rvision.ru/
 https://bezopashka.rvision.ru/
@@ -22,6 +24,7 @@ https://im.rvision.ru/
 https://imap.rvision.ru/
 https://mail.rvision.ru/
 https://meet.rvision.ru/
+https://mx.rvision.ru/
 https://mx02.rvision.ru/
 https://mx03.rvision.ru/
 https://mx04.rvision.ru/
@@ -29,4 +32,6 @@ https://rvision.ru/
 https://smtp.rvision.ru/
 https://support.rvision.ru/
 https://vds.rvision.ru/
+https://www.bezopashka.rvision.ru/
+https://www.career.rvision.ru/
 https://www.rvision.ru/

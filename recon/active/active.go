@@ -36,15 +36,26 @@ type ProxyPool struct {
 	maxRequests  int // запросов на одну прокси перед ротацией
 }
 
-// PrepareProxies загружает и валидирует прокси, при необходимости задаёт вопрос пользователю.
-// Вызывать ДО запуска горутин, чтобы CLI-вопрос не перебивался параллельным выводом.
+// PrepareProxies загружает и валидирует прокси из указанного файла, при необходимости
+// задаёт вопрос пользователю. Вызывать ДО запуска горутин.
 // Возвращает (валидные прокси, запускать ли брутфорс).
-func PrepareProxies() ([]*ProxyInfo, bool) {
-	rawProxies, _ := loadProxies("proxies.txt")
+func PrepareProxies(proxiesFile string) ([]*ProxyInfo, bool) {
+	if proxiesFile == "" {
+		proxiesFile = "proxies.txt"
+	}
+	rawProxies, err := loadProxies(proxiesFile)
+	if err != nil {
+		fmt.Printf("  \033[91m[✗]\033[0m  Cannot read proxy file %q: %v\n", proxiesFile, err)
+	} else if len(rawProxies) == 0 {
+		fmt.Printf("  \033[93m[!]\033[0m  Proxy file %q is empty or not found.\n", proxiesFile)
+	} else {
+		fmt.Printf("  \033[90m→\033[0m  Loaded \033[97m%d\033[0m proxies from \033[96m%s\033[0m\n", len(rawProxies), proxiesFile)
+	}
+
 	validProxies := validateProxies(rawProxies)
 
 	if len(validProxies) == 0 {
-		fmt.Print("\n[?] Рабочие прокси не найдены. Запустить брутфорс без прокси? (y/n): ")
+		fmt.Print("\n  \033[93m[?]\033[0m  No working proxies found. Run bruteforce without proxy? (y/n): ")
 		var answer string
 		fmt.Scanln(&answer)
 		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
@@ -53,13 +64,15 @@ func PrepareProxies() ([]*ProxyInfo, bool) {
 		return nil, true // брутфорс без прокси
 	}
 
-	fmt.Printf("[✓] Рабочих прокси: %d\n", len(validProxies))
+	fmt.Printf("\n  \033[92m[✔]\033[0m  Working proxies: \033[92m\033[1m%d\033[0m / %d\n",
+		len(validProxies), len(rawProxies))
 	return validProxies, true
 }
 
 // Active выполняет активный брутфорс субдоменов с заранее подготовленными прокси.
 // proxies и runBrute получаются из PrepareProxies() — до запуска горутин.
-func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*ProxyInfo, runBrute bool) error {
+// wordlistPath — путь к файлу со словарём субдоменов (передаётся флагом --Wsub).
+func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*ProxyInfo, runBrute bool, wordlistPath string) error {
 	if !runBrute {
 		fmt.Println("[!] Активный брутфорс пропущен.")
 		return nil
@@ -73,7 +86,10 @@ func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*Prox
 	}
 
 	// 3. Загрузить субдомены
-	subdomains, err := loadSubdomains("subList.txt")
+	if wordlistPath == "" {
+		wordlistPath = "subList.txt"
+	}
+	subdomains, err := loadSubdomains(wordlistPath)
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки субдоменов: %v", err)
 	}
@@ -111,18 +127,25 @@ func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*Prox
 	return nil
 }
 
-// validateProxies проверяет каждую прокси параллельно и возвращает только рабочие.
+// validateProxies проверяет каждую прокси параллельно.
+// Сначала выводит весь список (мгновенно), затем результаты появляются по мере ответов.
 func validateProxies(proxies []*ProxyInfo) []*ProxyInfo {
 	if len(proxies) == 0 {
 		return nil
 	}
 
-	fmt.Printf("[*] Проверка %d прокси...\n", len(proxies))
+	// ── Немедленно показываем что будем проверять ─────────────────────────────
+	fmt.Printf("  \033[90m→\033[0m  Found \033[97m%d\033[0m proxies to validate:\n\n", len(proxies))
+	for i, p := range proxies {
+		fmt.Printf("      \033[90m%2d.\033[0m  \033[90m%s\033[0m\n", i+1, maskProxy(p.URL))
+	}
+	fmt.Printf("\n  \033[90m→\033[0m  Checking in parallel…\n\n")
 
+	// ── Параллельная проверка, результаты выводятся по мере поступления ───────
 	var mu sync.Mutex
 	var valid []*ProxyInfo
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 20) // максимум 20 одновременных проверок
+	sem := make(chan struct{}, 20)
 
 	for _, p := range proxies {
 		wg.Add(1)
@@ -130,16 +153,25 @@ func validateProxies(proxies []*ProxyInfo) []*ProxyInfo {
 		go func(pi *ProxyInfo) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if isProxyAlive(pi) {
-				mu.Lock()
+
+			start := time.Now()
+			alive := isProxyAlive(pi)
+			elapsed := time.Since(start).Milliseconds()
+			label := maskProxy(pi.URL)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if alive {
 				valid = append(valid, pi)
-				mu.Unlock()
+				fmt.Printf("      \033[92m[✔]\033[0m  \033[97m%-52s\033[0m  \033[92malive\033[0m  \033[90m%dms\033[0m\n", label, elapsed)
+			} else {
+				fmt.Printf("      \033[91m[✗]\033[0m  \033[90m%-52s\033[0m  \033[91mdead\033[0m   \033[90m%dms\033[0m\n", label, elapsed)
 			}
 		}(p)
 	}
 
 	wg.Wait()
-	fmt.Printf("[✓] Рабочих прокси: %d из %d\n", len(valid), len(proxies))
+	fmt.Println()
 	return valid
 }
 
