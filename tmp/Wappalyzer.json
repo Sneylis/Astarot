@@ -1,7 +1,7 @@
 [
   {
     "url": "http://vds.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Welcome to nginx!",
     "server": "nginx",
@@ -17,7 +17,7 @@
   },
   {
     "url": "http://cdp.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Index of /",
     "server": "nginx/1.24.0 (Ubuntu)",
@@ -41,62 +41,8 @@
     }
   },
   {
-    "url": "https://im.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "R-Vision",
-    "x_powered_by": "Express",
-    "technologies": {
-      "Express": {
-        "categories": [
-          "Web frameworks",
-          "Web servers"
-        ],
-        "website": "https://expressjs.com"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Meteor": {
-        "categories": [
-          "JavaScript frameworks",
-          "Web frameworks"
-        ],
-        "website": "https://www.meteor.com"
-      },
-      "MongoDB": {
-        "categories": [
-          "Databases"
-        ],
-        "website": "https://www.mongodb.org"
-      },
-      "Node.js": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://nodejs.org"
-      }
-    }
-  },
-  {
-    "url": "https://editor.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "technologies": {
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      }
-    }
-  },
-  {
     "url": "http://comics.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Комикс | R-Vision",
     "server": "ddos-guard",
@@ -116,76 +62,8 @@
     }
   },
   {
-    "url": "https://go.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Squadus",
-    "technologies": {
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      }
-    }
-  },
-  {
-    "url": "http://im.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "R-Vision",
-    "x_powered_by": "Express",
-    "technologies": {
-      "Express": {
-        "categories": [
-          "Web frameworks",
-          "Web servers"
-        ],
-        "website": "https://expressjs.com"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Meteor": {
-        "categories": [
-          "JavaScript frameworks",
-          "Web frameworks"
-        ],
-        "website": "https://www.meteor.com"
-      },
-      "MongoDB": {
-        "categories": [
-          "Databases"
-        ],
-        "website": "https://www.mongodb.org"
-      },
-      "Node.js": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://nodejs.org"
-      }
-    }
-  },
-  {
-    "url": "http://editor.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "technologies": {
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      }
-    }
-  },
-  {
     "url": "https://docs.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "R-Vision Справочный портал",
     "server": "nginx/1.24.0 (Ubuntu)",
@@ -227,22 +105,29 @@
     }
   },
   {
-    "url": "http://go.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "url": "https://comics.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
-    "title": "Squadus",
+    "title": "Комикс | R-Vision",
+    "server": "ddos-guard",
     "technologies": {
-      "HSTS": {
+      "DDoS-Guard": {
         "categories": [
           "Security"
         ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+        "website": "https://ddos-guard.net"
+      },
+      "Tilda": {
+        "categories": [
+          "CMS"
+        ],
+        "website": "https://tilda.cc"
       }
     }
   },
   {
     "url": "http://docs.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "R-Vision Справочный портал",
     "server": "nginx/1.24.0 (Ubuntu)",
@@ -284,8 +169,8 @@
     }
   },
   {
-    "url": "https://mx.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "url": "https://mx02.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Outlook",
     "server": "Microsoft-IIS/10.0",
@@ -331,7 +216,99 @@
   },
   {
     "url": "https://mail.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "Outlook",
+    "server": "Microsoft-IIS/10.0",
+    "x_powered_by": "ASP.NET",
+    "technologies": {
+      "ASP.NET": {
+        "version": "4.0.30319"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "IIS:10.0": {
+        "categories": [
+          "Web servers"
+        ],
+        "website": "https://www.iis.net"
+      },
+      "Microsoft ASP.NET:4.0.30319": {
+        "categories": [
+          "Web frameworks"
+        ],
+        "website": "https://www.asp.net"
+      },
+      "Microsoft-iis": {
+        "version": "10.0"
+      },
+      "Outlook Web App:15.2.1544": {
+        "categories": [
+          "Webmail"
+        ],
+        "website": "https://help.outlook.com"
+      },
+      "Windows Server": {
+        "categories": [
+          "Operating systems"
+        ],
+        "website": "https://microsoft.com/windowsserver"
+      }
+    }
+  },
+  {
+    "url": "https://mx04.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "Outlook",
+    "server": "Microsoft-IIS/10.0",
+    "x_powered_by": "ASP.NET",
+    "technologies": {
+      "ASP.NET": {
+        "version": "4.0.30319"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "IIS:10.0": {
+        "categories": [
+          "Web servers"
+        ],
+        "website": "https://www.iis.net"
+      },
+      "Microsoft ASP.NET:4.0.30319": {
+        "categories": [
+          "Web frameworks"
+        ],
+        "website": "https://www.asp.net"
+      },
+      "Microsoft-iis": {
+        "version": "10.0"
+      },
+      "Outlook Web App:15.2.1544": {
+        "categories": [
+          "Webmail"
+        ],
+        "website": "https://help.outlook.com"
+      },
+      "Windows Server": {
+        "categories": [
+          "Operating systems"
+        ],
+        "website": "https://microsoft.com/windowsserver"
+      }
+    }
+  },
+  {
+    "url": "https://imap.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Outlook",
     "server": "Microsoft-IIS/10.0",
@@ -377,53 +354,7 @@
   },
   {
     "url": "https://smtp.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Outlook",
-    "server": "Microsoft-IIS/10.0",
-    "x_powered_by": "ASP.NET",
-    "technologies": {
-      "ASP.NET": {
-        "version": "4.0.30319"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "IIS:10.0": {
-        "categories": [
-          "Web servers"
-        ],
-        "website": "https://www.iis.net"
-      },
-      "Microsoft ASP.NET:4.0.30319": {
-        "categories": [
-          "Web frameworks"
-        ],
-        "website": "https://www.asp.net"
-      },
-      "Microsoft-iis": {
-        "version": "10.0"
-      },
-      "Outlook Web App:15.2.1544": {
-        "categories": [
-          "Webmail"
-        ],
-        "website": "https://help.outlook.com"
-      },
-      "Windows Server": {
-        "categories": [
-          "Operating systems"
-        ],
-        "website": "https://microsoft.com/windowsserver"
-      }
-    }
-  },
-  {
-    "url": "https://mx02.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Outlook",
     "server": "Microsoft-IIS/10.0",
@@ -469,7 +400,7 @@
   },
   {
     "url": "https://mx03.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Outlook",
     "server": "Microsoft-IIS/10.0",
@@ -515,7 +446,7 @@
   },
   {
     "url": "https://autodiscover.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Outlook",
     "server": "Microsoft-IIS/10.0",
@@ -556,275 +487,173 @@
           "Operating systems"
         ],
         "website": "https://microsoft.com/windowsserver"
-      }
-    }
-  },
-  {
-    "url": "https://comics.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Комикс | R-Vision",
-    "server": "ddos-guard",
-    "technologies": {
-      "DDoS-Guard": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://ddos-guard.net"
-      },
-      "Tilda": {
-        "categories": [
-          "CMS"
-        ],
-        "website": "https://tilda.cc"
-      }
-    }
-  },
-  {
-    "url": "https://mx04.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Outlook",
-    "server": "Microsoft-IIS/10.0",
-    "x_powered_by": "ASP.NET",
-    "technologies": {
-      "ASP.NET": {
-        "version": "4.0.30319"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "IIS:10.0": {
-        "categories": [
-          "Web servers"
-        ],
-        "website": "https://www.iis.net"
-      },
-      "Microsoft ASP.NET": {
-        "categories": [
-          "Web frameworks"
-        ],
-        "website": "https://www.asp.net"
-      },
-      "Microsoft-iis": {
-        "version": "10.0"
-      },
-      "Outlook Web App:15.2.1544": {
-        "categories": [
-          "Webmail"
-        ],
-        "website": "https://help.outlook.com"
-      },
-      "Windows Server": {
-        "categories": [
-          "Operating systems"
-        ],
-        "website": "https://microsoft.com/windowsserver"
-      }
-    }
-  },
-  {
-    "url": "https://imap.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Outlook",
-    "server": "Microsoft-IIS/10.0",
-    "x_powered_by": "ASP.NET",
-    "technologies": {
-      "ASP.NET": {
-        "version": "4.0.30319"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "IIS:10.0": {
-        "categories": [
-          "Web servers"
-        ],
-        "website": "https://www.iis.net"
-      },
-      "Microsoft ASP.NET:4.0.30319": {
-        "categories": [
-          "Web frameworks"
-        ],
-        "website": "https://www.asp.net"
-      },
-      "Microsoft-iis": {
-        "version": "10.0"
-      },
-      "Outlook Web App:15.2.1544": {
-        "categories": [
-          "Webmail"
-        ],
-        "website": "https://help.outlook.com"
-      },
-      "Windows Server": {
-        "categories": [
-          "Operating systems"
-        ],
-        "website": "https://microsoft.com/windowsserver"
-      }
-    }
-  },
-  {
-    "url": "https://meet.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "MySquadus",
-    "technologies": {
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Jitsi": {
-        "categories": [
-          "Live chat"
-        ],
-        "website": "https://jitsi.org"
-      }
-    }
-  },
-  {
-    "url": "http://meet.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "MySquadus",
-    "technologies": {
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Jitsi": {
-        "categories": [
-          "Live chat"
-        ],
-        "website": "https://jitsi.org"
-      }
-    }
-  },
-  {
-    "url": "https://support.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Вход в систему Atlassian - R-Vision support",
-    "server": "nginx/1.24.0 (Ubuntu)",
-    "technologies": {
-      "Atlassian Jira": {
-        "categories": [
-          "Issue trackers"
-        ],
-        "website": "https://www.atlassian.com/software/jira/overview/"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Java": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://java.com"
-      },
-      "Moment.js": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://momentjs.com"
-      },
-      "Nginx": {
-        "version": "1.24.0"
-      },
-      "Nginx:1.24.0": {
-        "categories": [
-          "Web servers",
-          "Reverse proxies"
-        ],
-        "website": "https://nginx.org/en"
-      },
-      "Ubuntu": {
-        "categories": [
-          "Operating systems"
-        ],
-        "website": "https://www.ubuntu.com/server"
-      },
-      "jQuery": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://jquery.com"
-      }
-    }
-  },
-  {
-    "url": "http://support.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "Вход в систему Atlassian - R-Vision support",
-    "server": "nginx/1.24.0 (Ubuntu)",
-    "technologies": {
-      "Atlassian Jira": {
-        "categories": [
-          "Issue trackers"
-        ],
-        "website": "https://www.atlassian.com/software/jira/overview/"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Java": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://java.com"
-      },
-      "Moment.js": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://momentjs.com"
-      },
-      "Nginx": {
-        "version": "1.24.0"
-      },
-      "Nginx:1.24.0": {
-        "categories": [
-          "Web servers",
-          "Reverse proxies"
-        ],
-        "website": "https://nginx.org/en"
-      },
-      "Ubuntu": {
-        "categories": [
-          "Operating systems"
-        ],
-        "website": "https://www.ubuntu.com/server"
-      },
-      "jQuery": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://jquery.com"
       }
     }
   },
   {
     "url": "https://rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
+    "server": "nginx",
+    "x_powered_by": "PHP/8.3.19",
+    "technologies": {
+      "Drupal": {},
+      "Drupal:11": {
+        "categories": [
+          "CMS"
+        ],
+        "website": "https://www.drupal.org/"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "Nginx": {
+        "categories": [
+          "Web servers",
+          "Reverse proxies"
+        ],
+        "website": "https://nginx.org/en"
+      },
+      "PHP": {
+        "version": "8.3.19"
+      },
+      "PHP:8.3.19": {
+        "categories": [
+          "Programming languages"
+        ],
+        "website": "https://php.net"
+      },
+      "jQuery": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://jquery.com"
+      },
+      "jsDelivr": {
+        "categories": [
+          "CDN"
+        ],
+        "website": "https://www.jsdelivr.com/"
+      }
+    }
+  },
+  {
+    "url": "http://support.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "Вход в систему Atlassian - R-Vision support",
+    "server": "nginx/1.24.0 (Ubuntu)",
+    "technologies": {
+      "Atlassian Jira": {
+        "categories": [
+          "Issue trackers"
+        ],
+        "website": "https://www.atlassian.com/software/jira/overview/"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "Java": {
+        "categories": [
+          "Programming languages"
+        ],
+        "website": "https://java.com"
+      },
+      "Moment.js": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://momentjs.com"
+      },
+      "Nginx": {
+        "version": "1.24.0"
+      },
+      "Nginx:1.24.0": {
+        "categories": [
+          "Web servers",
+          "Reverse proxies"
+        ],
+        "website": "https://nginx.org/en"
+      },
+      "Ubuntu": {
+        "categories": [
+          "Operating systems"
+        ],
+        "website": "https://www.ubuntu.com/server"
+      },
+      "jQuery": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://jquery.com"
+      }
+    }
+  },
+  {
+    "url": "https://support.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "Вход в систему Atlassian - R-Vision support",
+    "server": "nginx/1.24.0 (Ubuntu)",
+    "technologies": {
+      "Atlassian Jira": {
+        "categories": [
+          "Issue trackers"
+        ],
+        "website": "https://www.atlassian.com/software/jira/overview/"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "Java": {
+        "categories": [
+          "Programming languages"
+        ],
+        "website": "https://java.com"
+      },
+      "Moment.js": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://momentjs.com"
+      },
+      "Nginx": {
+        "version": "1.24.0"
+      },
+      "Nginx:1.24.0": {
+        "categories": [
+          "Web servers",
+          "Reverse proxies"
+        ],
+        "website": "https://nginx.org/en"
+      },
+      "Ubuntu": {
+        "categories": [
+          "Operating systems"
+        ],
+        "website": "https://www.ubuntu.com/server"
+      },
+      "jQuery": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://jquery.com"
+      }
+    }
+  },
+  {
+    "url": "https://vds.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
     "server": "nginx",
@@ -875,109 +704,7 @@
   },
   {
     "url": "http://rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
-    "server": "nginx",
-    "x_powered_by": "PHP/8.3.19",
-    "technologies": {
-      "Drupal": {},
-      "Drupal:11": {
-        "categories": [
-          "CMS"
-        ],
-        "website": "https://www.drupal.org/"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Nginx": {
-        "categories": [
-          "Web servers",
-          "Reverse proxies"
-        ],
-        "website": "https://nginx.org/en"
-      },
-      "PHP": {
-        "version": "8.3.19"
-      },
-      "PHP:8.3.19": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://php.net"
-      },
-      "jQuery": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://jquery.com"
-      },
-      "jsDelivr": {
-        "categories": [
-          "CDN"
-        ],
-        "website": "https://www.jsdelivr.com/"
-      }
-    }
-  },
-  {
-    "url": "https://vds.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
-    "status_code": 200,
-    "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
-    "server": "nginx",
-    "x_powered_by": "PHP/8.3.19",
-    "technologies": {
-      "Drupal": {},
-      "Drupal:11": {
-        "categories": [
-          "CMS"
-        ],
-        "website": "https://www.drupal.org/"
-      },
-      "HSTS": {
-        "categories": [
-          "Security"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "Nginx": {
-        "categories": [
-          "Web servers",
-          "Reverse proxies"
-        ],
-        "website": "https://nginx.org/en"
-      },
-      "PHP": {
-        "version": "8.3.19"
-      },
-      "PHP:8.3.19": {
-        "categories": [
-          "Programming languages"
-        ],
-        "website": "https://php.net"
-      },
-      "jQuery": {
-        "categories": [
-          "JavaScript libraries"
-        ],
-        "website": "https://jquery.com"
-      },
-      "jsDelivr": {
-        "categories": [
-          "CDN"
-        ],
-        "website": "https://www.jsdelivr.com/"
-      }
-    }
-  },
-  {
-    "url": "https://www.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
     "server": "nginx",
@@ -1028,7 +755,7 @@
   },
   {
     "url": "http://www.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
     "server": "nginx",
@@ -1078,8 +805,59 @@
     }
   },
   {
-    "url": "https://bezopashka.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "url": "https://www.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "status_code": 200,
+    "title": "R-Vision — разработчик надёжных систем цифровизации и кибербезопасности.",
+    "server": "nginx",
+    "x_powered_by": "PHP/8.3.19",
+    "technologies": {
+      "Drupal": {},
+      "Drupal:11": {
+        "categories": [
+          "CMS"
+        ],
+        "website": "https://www.drupal.org/"
+      },
+      "HSTS": {
+        "categories": [
+          "Security"
+        ],
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
+      },
+      "Nginx": {
+        "categories": [
+          "Web servers",
+          "Reverse proxies"
+        ],
+        "website": "https://nginx.org/en"
+      },
+      "PHP": {
+        "version": "8.3.19"
+      },
+      "PHP:8.3.19": {
+        "categories": [
+          "Programming languages"
+        ],
+        "website": "https://php.net"
+      },
+      "jQuery": {
+        "categories": [
+          "JavaScript libraries"
+        ],
+        "website": "https://jquery.com"
+      },
+      "jsDelivr": {
+        "categories": [
+          "CDN"
+        ],
+        "website": "https://www.jsdelivr.com/"
+      }
+    }
+  },
+  {
+    "url": "https://www.bezopashka.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Безопашка",
     "server": "ddos-guard",
@@ -1105,8 +883,8 @@
     }
   },
   {
-    "url": "https://www.bezopashka.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "url": "https://bezopashka.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Безопашка",
     "server": "ddos-guard",
@@ -1133,7 +911,7 @@
   },
   {
     "url": "http://www.bezopashka.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Безопашка",
     "server": "ddos-guard",
@@ -1160,7 +938,7 @@
   },
   {
     "url": "http://bezopashka.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Безопашка",
     "server": "ddos-guard",
@@ -1187,7 +965,7 @@
   },
   {
     "url": "https://career.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Карьера в R-Vision",
     "server": "ddos-guard",
@@ -1214,7 +992,7 @@
   },
   {
     "url": "https://www.career.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Карьера в R-Vision",
     "server": "ddos-guard",
@@ -1241,7 +1019,7 @@
   },
   {
     "url": "http://www.career.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Карьера в R-Vision",
     "server": "ddos-guard",
@@ -1268,7 +1046,7 @@
   },
   {
     "url": "http://career.rvision.ru/",
-    "timestamp": "2026-04-03T23:44:40Z",
+    "timestamp": "2026-04-15T18:45:22Z",
     "status_code": 200,
     "title": "Карьера в R-Vision",
     "server": "ddos-guard",
@@ -1292,5 +1070,45 @@
         "website": "https://jquery.com"
       }
     }
+  },
+  {
+    "url": "https://meet.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"https://meet.rvision.ru/\": dial tcp 89.106.171.204:443: i/o timeout"
+  },
+  {
+    "url": "https://go.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"https://go.rvision.ru/\": dial tcp 89.106.171.204:443: i/o timeout"
+  },
+  {
+    "url": "https://im.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"https://im.rvision.ru/\": dial tcp 89.106.171.204:443: i/o timeout"
+  },
+  {
+    "url": "https://editor.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"https://editor.rvision.ru/\": dial tcp 89.106.171.204:443: i/o timeout"
+  },
+  {
+    "url": "http://editor.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"http://editor.rvision.ru/\": dial tcp 89.106.171.204:80: i/o timeout"
+  },
+  {
+    "url": "http://go.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"http://go.rvision.ru/\": dial tcp 89.106.171.204:80: i/o timeout"
+  },
+  {
+    "url": "http://im.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"http://im.rvision.ru/\": dial tcp 89.106.171.204:80: i/o timeout"
+  },
+  {
+    "url": "http://meet.rvision.ru/",
+    "timestamp": "2026-04-15T18:45:22Z",
+    "error": "Get \"http://meet.rvision.ru/\": dial tcp 89.106.171.204:80: i/o timeout"
   }
 ]

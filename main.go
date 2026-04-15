@@ -9,6 +9,8 @@ import (
 
 	"Astarot/core"
 	Core "Astarot/core/Analyze"
+	cveanalyzer "Astarot/core/CVE"
+	jsanalyzer "Astarot/core/Js"
 	"Astarot/core/masscan"
 	"Astarot/core/report"
 	waf "Astarot/core/WafW00f"
@@ -306,8 +308,36 @@ func main() {
 	phase3.Wait()
 	phaseOK(3, "All parallel modules finished.")
 
-	// ── Phase 4: HTML report ─────────────────────────────────────────────────
-	phaseHeader(4, "HTML report generation")
+	// ── Phase 4: JS Analysis + CVE Scan (parallel) ───────────────────────────
+	phaseHeader(4, "JS Analysis  +  CVE Scan  (parallel)")
+
+	proxyURLs := make([]string, len(proxies))
+	for i, p := range proxies {
+		proxyURLs[i] = p.URL
+	}
+
+	var phase4 sync.WaitGroup
+	phase4.Add(2)
+
+	go func() {
+		defer phase4.Done()
+		info("→", "JS analysis (passive OSINT + crawl + brute + recursive)…")
+		jsanalyzer.JSAnalyzerMain(resultFile, proxyURLs, "tmp")
+		ok("JS analysis complete.")
+	}()
+
+	go func() {
+		defer phase4.Done()
+		info("→", "CVE scan (NVD API)…")
+		cveanalyzer.CVEMain(wappalyzerFile, proxyURLs, "tmp")
+		ok("CVE scan complete.")
+	}()
+
+	phase4.Wait()
+	phaseOK(4, "JS analysis and CVE scan finished.")
+
+	// ── Phase 5: HTML report ─────────────────────────────────────────────────
+	phaseHeader(5, "HTML report generation")
 	reportFile := "report.html"
 
 	r, err := report.Build(domain, wappalyzerFile, portsFile, "out/waf")
@@ -318,7 +348,7 @@ func main() {
 	} else {
 		ok(fmt.Sprintf("Report saved  →  %s%s%s", green+bold, reportFile, reset))
 	}
-	phaseOK(4, "Done.")
+	phaseOK(5, "Done.")
 
 	// ── Summary ───────────────────────────────────────────────────────────────
 	printSummary(domain, resultFile, portsFile, wappalyzerFile, reportFile, count)

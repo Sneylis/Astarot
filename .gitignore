@@ -13,3 +13,4 @@ subList.txt
 .env
 .claude
 report.html
+tmp/*

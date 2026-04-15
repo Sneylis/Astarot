@@ -24,7 +24,6 @@ https://im.rvision.ru/
 https://imap.rvision.ru/
 https://mail.rvision.ru/
 https://meet.rvision.ru/
-https://mx.rvision.ru/
 https://mx02.rvision.ru/
 https://mx03.rvision.ru/
 https://mx04.rvision.ru/

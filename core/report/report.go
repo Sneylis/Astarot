@@ -11,6 +11,8 @@ import (
 	"time"
 
 	Core "Astarot/core/Analyze"
+	cveanalyzer "Astarot/core/CVE"
+	jsanalyzer "Astarot/core/Js"
 	"Astarot/core/masscan"
 )
 
@@ -19,6 +21,38 @@ type PortInfo struct {
 	Port    int    `json:"port"`
 	Proto   string `json:"proto"`
 	Service string `json:"service"`
+}
+
+// CVERow is a single CVE finding for the HTML template.
+type CVERow struct {
+	TechName    string
+	Version     string
+	CVEID       string
+	CVSSScore   float64
+	Severity    string
+	Published   string
+	Description string
+	NVDURL      string
+}
+
+// JSSecretRow is a single secrets hit for the HTML template.
+type JSSecretRow struct {
+	Name     string
+	Value    string
+	Context  string
+	Severity string
+	JSURL    string
+}
+
+// JSFileRow is a condensed JS-file entry for the HTML template.
+type JSFileRow struct {
+	URL          string
+	Path         string
+	Source       string
+	StatusCode   int
+	HasSourceMap bool
+	IsVendor     bool
+	SecretCount  int
 }
 
 // HostReport — агрегированные данные по одному хосту для отчёта.
@@ -36,6 +70,16 @@ type HostReport struct {
 	Technologies []techRow
 	HasError     bool
 	Error        string
+	// JS Analysis
+	JSFiles    []JSFileRow
+	JSSecrets  []JSSecretRow
+	HasJS      bool
+	HasSecrets bool
+	// CVE Analysis
+	CVEFindings  []CVERow
+	HasCVE       bool
+	CVECritical  int
+	CVEHigh      int
 }
 
 type techRow struct {
@@ -57,6 +101,11 @@ type Stats struct {
 	HostsWithWAF int
 	TotalPorts   int
 	UniqueIPs    int
+	TotalJS      int
+	TotalSecrets int
+	TotalCVE     int
+	CVECritical  int
+	CVEHigh      int
 }
 
 // masscan JSON entry
@@ -89,7 +138,14 @@ func Build(
 	// 3. Читаем WAF результаты (один файл на URL)
 	hostWAF := loadWAFResults(wafDir)
 
-	// 4. Строим список хостов
+	// 4. Читаем JS-анализ и CVE-данные
+	jsResultsFile := strings.TrimSuffix(portsFile, "Ports.txt") + "js_results.json"
+	jsMap := loadJSResults(jsResultsFile)
+
+	cveResultsFile := strings.TrimSuffix(portsFile, "Ports.txt") + "cve_results.json"
+	cveMap := loadCVEResults(cveResultsFile)
+
+	// 5. Строим список хостов
 	r := &Report{
 		Target:    target,
 		Generated: time.Now().Format("2006-01-02 15:04:05"),
@@ -151,6 +207,27 @@ func Build(
 			})
 		}
 
+		// JS Analysis — merge by URL and domain
+		if jsHost, ok := jsMap[w.URL]; ok {
+			mergeJSIntoHost(&hr, jsHost)
+		} else if jsHost, ok := jsMap[domain]; ok {
+			mergeJSIntoHost(&hr, jsHost)
+		}
+		if hr.HasJS {
+			r.Stats.TotalJS += len(hr.JSFiles)
+		}
+		r.Stats.TotalSecrets += len(hr.JSSecrets)
+
+		// CVE merge
+		if cveHost, ok := cveMap[w.URL]; ok {
+			mergeCVEIntoHost(&hr, cveHost)
+		} else if cveHost, ok := cveMap[domain]; ok {
+			mergeCVEIntoHost(&hr, cveHost)
+		}
+		r.Stats.TotalCVE += len(hr.CVEFindings)
+		r.Stats.CVECritical += hr.CVECritical
+		r.Stats.CVEHigh += hr.CVEHigh
+
 		r.Hosts = append(r.Hosts, hr)
 	}
 
@@ -163,6 +240,33 @@ func Build(
 	r.Stats.UniqueIPs = len(uniqueIPs)
 
 	return r, nil
+}
+
+// mergeJSIntoHost populates JS-related fields on hr from a jsanalyzer.HostResult.
+func mergeJSIntoHost(hr *HostReport, js jsanalyzer.HostResult) {
+	for _, f := range js.JSFiles {
+		row := JSFileRow{
+			URL:          f.URL,
+			Path:         f.Path,
+			Source:       f.Source,
+			StatusCode:   f.StatusCode,
+			HasSourceMap: f.HasSourceMap,
+			IsVendor:     f.IsVendor,
+			SecretCount:  len(f.Secrets),
+		}
+		hr.JSFiles = append(hr.JSFiles, row)
+		for _, s := range f.Secrets {
+			hr.JSSecrets = append(hr.JSSecrets, JSSecretRow{
+				Name:     s.Name,
+				Value:    s.Value,
+				Context:  s.Context,
+				Severity: s.Severity,
+				JSURL:    f.URL,
+			})
+		}
+	}
+	hr.HasJS = len(hr.JSFiles) > 0
+	hr.HasSecrets = len(hr.JSSecrets) > 0
 }
 
 // GenerateHTML рендерит отчёт в HTML-файл.
@@ -181,6 +285,9 @@ func GenerateHTML(r *Report, outputFile string) error {
 			}
 		},
 		"serviceHint": serviceHint,
+		"add":         func(a, b int) int { return a + b },
+		"gt":          func(a, b int) bool { return a > b },
+		"lower":       strings.ToLower,
 	}).Parse(htmlTemplate)
 	if err != nil {
 		return fmt.Errorf("template parse: %w", err)
@@ -246,6 +353,92 @@ func loadMasscanPorts(portsFile string, ipMap map[string]string) map[string][]Po
 				Service: serviceHint(p.Port),
 			})
 		}
+	}
+	return out
+}
+
+// loadCVEResults reads tmp/cve_results.json and indexes by host URL and bare domain.
+func loadCVEResults(path string) map[string]cveanalyzer.HostCVEResult {
+	out := make(map[string]cveanalyzer.HostCVEResult)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	var report cveanalyzer.CVEReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return out
+	}
+	for _, r := range report.Hosts {
+		out[r.HostURL] = r
+		out[stripScheme(r.HostURL)] = r
+	}
+	return out
+}
+
+// mergeCVEIntoHost populates CVE-related fields on hr from cveanalyzer.HostCVEResult.
+func mergeCVEIntoHost(hr *HostReport, cve cveanalyzer.HostCVEResult) {
+	for _, tc := range cve.Findings {
+		for _, entry := range tc.CVEs {
+			row := CVERow{
+				TechName:    tc.Technology,
+				Version:     tc.Version,
+				CVEID:       entry.ID,
+				CVSSScore:   entry.CVSSScore,
+				Severity:    entry.Severity,
+				Published:   entry.Published,
+				Description: entry.Description,
+				NVDURL:      entry.NVDURL,
+			}
+			hr.CVEFindings = append(hr.CVEFindings, row)
+			switch strings.ToUpper(entry.Severity) {
+			case "CRITICAL":
+				hr.CVECritical++
+			case "HIGH":
+				hr.CVEHigh++
+			}
+		}
+	}
+	// Sort: Critical first, then by CVSS score
+	sort.Slice(hr.CVEFindings, func(i, j int) bool {
+		si := severityOrder(hr.CVEFindings[i].Severity)
+		sj := severityOrder(hr.CVEFindings[j].Severity)
+		if si != sj {
+			return si < sj
+		}
+		return hr.CVEFindings[i].CVSSScore > hr.CVEFindings[j].CVSSScore
+	})
+	hr.HasCVE = len(hr.CVEFindings) > 0
+}
+
+func severityOrder(s string) int {
+	switch strings.ToUpper(s) {
+	case "CRITICAL":
+		return 0
+	case "HIGH":
+		return 1
+	case "MEDIUM":
+		return 2
+	case "LOW":
+		return 3
+	default:
+		return 4
+	}
+}
+
+// loadJSResults reads tmp/js_results.json and indexes results by URL and bare domain.
+func loadJSResults(path string) map[string]jsanalyzer.HostResult {
+	out := make(map[string]jsanalyzer.HostResult)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	var results []jsanalyzer.HostResult
+	if err := json.Unmarshal(data, &results); err != nil {
+		return out
+	}
+	for _, r := range results {
+		out[r.URL] = r
+		out[stripScheme(r.URL)] = r
 	}
 	return out
 }
@@ -466,6 +659,49 @@ const htmlTemplate = `<!DOCTYPE html>
 
   /* ── Footer ── */
   .footer { text-align: center; padding: 32px; color: #30363d; font-size: 12px; }
+
+  /* ── JS section ── */
+  .js-section { padding: 0 20px 16px; border-top: 1px solid #21262d; margin-top: 4px; }
+  .js-files-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }
+  .js-files-table th { text-align:left; color:#8b949e; font-weight:500; padding:4px 6px;
+    border-bottom:1px solid #30363d; font-size:11px; text-transform:uppercase; }
+  .js-files-table td { padding:4px 6px; border-bottom:1px solid #161b22; font-family:monospace; font-size:11px; }
+  .js-files-table tr:last-child td { border-bottom:none; }
+  .js-url { color:#79c0ff; word-break:break-all; }
+  .js-vendor { color:#8b949e; font-style:italic; }
+  .js-map { color:#3fb950; }
+
+  /* ── Secrets table ── */
+  .secrets-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .secrets-table th { text-align:left; color:#8b949e; font-weight:500; padding:4px 8px;
+    border-bottom:1px solid #30363d; font-size:11px; text-transform:uppercase; }
+  .secrets-table td { padding:5px 8px; border-bottom:1px solid #1c2128; vertical-align:top; }
+  .secrets-table tr:last-child td { border-bottom:none; }
+  .secret-val { font-family:monospace; font-size:11px; word-break:break-all; color:#e6edf3; }
+  .secret-ctx { font-size:10px; color:#8b949e; font-family:monospace; word-break:break-all; margin-top:2px; }
+  .secret-src { font-size:10px; color:#58a6ff; font-family:monospace; word-break:break-all; }
+  .sev-critical { background:#5a0e0e; color:#ff7b72; border:1px solid #9e3030; }
+  .sev-high     { background:#3d1f1f; color:#ff9a72; border:1px solid #6e3a2a; }
+  .sev-medium   { background:#2d2200; color:#e3b341; border:1px solid #594400; }
+  .sev-low      { background:#0f2618; color:#56d364; border:1px solid #1a4b2c; }
+  .sev-info     { background:#11222e; color:#79c0ff; border:1px solid #1f4b6e; }
+  .secrets-summary { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .sev-count { display:inline-flex; align-items:center; gap:4px; padding:3px 10px;
+    border-radius:10px; font-size:12px; font-weight:600; }
+
+  /* ── CVE section ── */
+  .cve-section { padding: 0 20px 16px; border-top: 1px solid #21262d; margin-top: 4px; }
+  .cve-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .cve-table th { text-align:left; color:#8b949e; font-weight:500; padding:5px 8px;
+    border-bottom:1px solid #30363d; font-size:11px; text-transform:uppercase; }
+  .cve-table td { padding:5px 8px; border-bottom:1px solid #1c2128; vertical-align:top; }
+  .cve-table tr:last-child td { border-bottom:none; }
+  .cve-id { font-family:monospace; font-weight:600; white-space:nowrap; }
+  .cve-tech { color:#e6edf3; font-weight:500; }
+  .cve-ver { color:#79c0ff; font-family:monospace; font-size:11px; }
+  .cve-score { font-family:monospace; font-weight:700; }
+  .cve-desc { color:#8b949e; font-size:11px; line-height:1.4; }
+  .cve-summary { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -495,6 +731,24 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="num">{{.Stats.HostsWithWAF}}</div>
     <div class="label">WAF Detected</div>
   </div>
+  <div class="stat-card">
+    <div class="num" style="color:#79c0ff">{{.Stats.TotalJS}}</div>
+    <div class="label">JS Files</div>
+  </div>
+  <div class="stat-card">
+    <div class="num" style="color:{{if gt .Stats.TotalSecrets 0}}#ff7b72{{else}}#56d364{{end}}">{{.Stats.TotalSecrets}}</div>
+    <div class="label">JS Secrets</div>
+  </div>
+  <div class="stat-card">
+    <div class="num" style="color:{{if gt .Stats.CVECritical 0}}#ff7b72{{else if gt .Stats.CVEHigh 0}}#ffa657{{else}}#8b949e{{end}}">{{.Stats.TotalCVE}}</div>
+    <div class="label">CVEs Found</div>
+  </div>
+  {{if gt .Stats.CVECritical 0}}
+  <div class="stat-card" style="border-color:#9e3030">
+    <div class="num" style="color:#ff7b72">{{.Stats.CVECritical}}</div>
+    <div class="label">Critical CVEs</div>
+  </div>
+  {{end}}
 </div>
 
 <div class="container">
@@ -564,6 +818,124 @@ const htmlTemplate = `<!DOCTYPE html>
     </div>
 
   </div>
+
+  {{/* CVE Findings section */}}
+  {{if .HasCVE}}
+  <div class="cve-section">
+    <div class="section-title" style="margin-top:14px;color:{{if gt .CVECritical 0}}#ff7b72{{else if gt .CVEHigh 0}}#ffa657{{else}}#e3b341{{end}}">
+      &#9888; CVE Findings ({{len .CVEFindings}})
+    </div>
+
+    {{/* Severity summary */}}
+    <div class="cve-summary">
+      {{$ccrit := 0}}{{$chigh := 0}}{{$cmed := 0}}{{$clow := 0}}
+      {{range .CVEFindings}}
+        {{if eq .Severity "CRITICAL"}}{{$ccrit = add $ccrit 1}}{{end}}
+        {{if eq .Severity "HIGH"}}{{$chigh = add $chigh 1}}{{end}}
+        {{if eq .Severity "MEDIUM"}}{{$cmed = add $cmed 1}}{{end}}
+        {{if eq .Severity "LOW"}}{{$clow = add $clow 1}}{{end}}
+      {{end}}
+      {{if gt $ccrit 0}}<span class="sev-count sev-critical">&#128308; Critical: {{$ccrit}}</span>{{end}}
+      {{if gt $chigh 0}}<span class="sev-count sev-high">&#9888; High: {{$chigh}}</span>{{end}}
+      {{if gt $cmed 0}}<span class="sev-count sev-medium">&#9675; Medium: {{$cmed}}</span>{{end}}
+      {{if gt $clow 0}}<span class="sev-count sev-low">&#10003; Low: {{$clow}}</span>{{end}}
+    </div>
+
+    <table class="cve-table">
+      <tr>
+        <th>CVE ID</th>
+        <th>Technology</th>
+        <th>Version</th>
+        <th>CVSS</th>
+        <th>Severity</th>
+        <th>Published</th>
+        <th>Description</th>
+      </tr>
+      {{range .CVEFindings}}
+      <tr>
+        <td><a class="cve-id" href="{{.NVDURL}}" target="_blank" style="color:{{if eq .Severity "CRITICAL"}}#ff7b72{{else if eq .Severity "HIGH"}}#ffa657{{else if eq .Severity "MEDIUM"}}#e3b341{{else}}#56d364{{end}}">{{.CVEID}}</a></td>
+        <td class="cve-tech">{{.TechName}}</td>
+        <td class="cve-ver">{{if .Version}}{{.Version}}{{else}}—{{end}}</td>
+        <td class="cve-score" style="color:{{if eq .Severity "CRITICAL"}}#ff7b72{{else if eq .Severity "HIGH"}}#ffa657{{else if eq .Severity "MEDIUM"}}#e3b341{{else}}#56d364{{end}}">{{printf "%.1f" .CVSSScore}}</td>
+        <td><span class="badge sev-{{.Severity | lower}}">{{.Severity}}</span></td>
+        <td style="white-space:nowrap;color:#8b949e;font-size:11px">{{.Published}}</td>
+        <td class="cve-desc">{{.Description}}</td>
+      </tr>
+      {{end}}
+    </table>
+  </div>
+  {{end}}
+
+  {{/* JS Files + Secrets section */}}
+  {{if .HasJS}}
+  <div class="js-section">
+
+    <div class="section-title" style="margin-top:14px">JS Files ({{len .JSFiles}})</div>
+    <table class="js-files-table">
+      <tr>
+        <th>Path / URL</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Map</th>
+        <th>Secrets</th>
+        <th>Type</th>
+      </tr>
+      {{range .JSFiles}}
+      <tr>
+        <td><a class="js-url" href="{{.URL}}" target="_blank">{{if .Path}}{{.Path}}{{else}}{{.URL}}{{end}}</a></td>
+        <td style="color:#8b949e">{{.Source}}</td>
+        <td>{{if .StatusCode}}<span class="badge {{statusClass .StatusCode}}">{{.StatusCode}}</span>{{end}}</td>
+        <td>{{if .HasSourceMap}}<span class="js-map">✓ .map</span>{{else}}<span style="color:#30363d">—</span>{{end}}</td>
+        <td>{{if gt .SecretCount 0}}<span style="color:#ff7b72;font-weight:600">{{.SecretCount}}</span>{{else}}<span style="color:#30363d">0</span>{{end}}</td>
+        <td>{{if .IsVendor}}<span class="js-vendor">vendor</span>{{else}}<span style="color:#3fb950">custom</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </table>
+
+    {{if .HasSecrets}}
+    <div class="section-title" style="margin-top:16px;color:#ff7b72">
+      &#9888; Secrets / Sensitive Data ({{len .JSSecrets}})
+    </div>
+
+    {{/* Severity summary counts */}}
+    <div class="secrets-summary">
+      {{$crit := 0}}{{$high := 0}}{{$med := 0}}{{$low := 0}}
+      {{range .JSSecrets}}
+        {{if eq .Severity "critical"}}{{$crit = add $crit 1}}{{end}}
+        {{if eq .Severity "high"}}{{$high = add $high 1}}{{end}}
+        {{if eq .Severity "medium"}}{{$med = add $med 1}}{{end}}
+        {{if eq .Severity "low"}}{{$low = add $low 1}}{{end}}
+      {{end}}
+      {{if gt $crit 0}}<span class="sev-count sev-critical">&#128308; Critical: {{$crit}}</span>{{end}}
+      {{if gt $high 0}}<span class="sev-count sev-high">&#9888; High: {{$high}}</span>{{end}}
+      {{if gt $med 0}}<span class="sev-count sev-medium">&#9675; Medium: {{$med}}</span>{{end}}
+      {{if gt $low 0}}<span class="sev-count sev-low">&#10003; Low: {{$low}}</span>{{end}}
+    </div>
+
+    <table class="secrets-table">
+      <tr>
+        <th>Severity</th>
+        <th>Pattern</th>
+        <th>Value / Context</th>
+        <th>Found In</th>
+      </tr>
+      {{range .JSSecrets}}
+      <tr>
+        <td><span class="badge sev-{{.Severity}}">{{.Severity}}</span></td>
+        <td style="color:#e6edf3;white-space:nowrap">{{.Name}}</td>
+        <td>
+          <div class="secret-val">{{.Value}}</div>
+          {{if .Context}}<div class="secret-ctx">…{{.Context}}…</div>{{end}}
+        </td>
+        <td><a class="secret-src" href="{{.JSURL}}" target="_blank">{{.JSURL}}</a></td>
+      </tr>
+      {{end}}
+    </table>
+    {{end}}
+
+  </div>
+  {{end}}
+
 </div>
 {{end}}
 </div>
