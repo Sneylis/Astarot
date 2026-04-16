@@ -7,15 +7,15 @@ import (
 	"os"
 	"sync"
 
-	"Astarot/core"
-	Core "Astarot/core/Analyze"
-	cveanalyzer "Astarot/core/CVE"
-	jsanalyzer "Astarot/core/Js"
-	"Astarot/core/masscan"
-	"Astarot/core/report"
-	waf "Astarot/core/WafW00f"
-	"Astarot/recon/active"
-	"Astarot/recon/passive"
+	"github.com/Sneylis/Astarot/core"
+	Core "github.com/Sneylis/Astarot/core/Analyze"
+	cveanalyzer "github.com/Sneylis/Astarot/core/CVE"
+	jsanalyzer "github.com/Sneylis/Astarot/core/Js"
+	"github.com/Sneylis/Astarot/core/masscan"
+	"github.com/Sneylis/Astarot/core/report"
+	waf "github.com/Sneylis/Astarot/core/WafW00f"
+	"github.com/Sneylis/Astarot/recon/active"
+	"github.com/Sneylis/Astarot/recon/passive"
 	"github.com/joho/godotenv"
 )
 
@@ -205,8 +205,25 @@ func main() {
 
 	domain := args[0]
 
+	// Resolve wordlist: if default name and file absent from CWD → extract embedded copy to temp file
+	wordlistPath := *wordlist
+	wordlistLabel := wordlistPath
+	if _, statErr := os.Stat(wordlistPath); os.IsNotExist(statErr) && wordlistPath == "subList.txt" {
+		tmp, err := os.CreateTemp("", "astarot-wl-*.txt")
+		if err != nil {
+			log.Fatalf("Cannot create temp wordlist: %v", err)
+		}
+		if _, err := tmp.Write(defaultWordlist); err != nil {
+			log.Fatalf("Cannot write temp wordlist: %v", err)
+		}
+		tmp.Close()
+		wordlistPath = tmp.Name()
+		wordlistLabel = fmt.Sprintf("embedded (%d entries)", len(defaultWordlist))
+		defer os.Remove(wordlistPath)
+	}
+
 	fmt.Printf("  %sTarget%s    %s→%s  %s%s%s\n",  yellow+bold, reset, gray, reset, cyan+bold, domain, reset)
-	fmt.Printf("  %sWordlist%s  %s→%s  %s%s%s\n",  yellow+bold, reset, gray, reset, white, *wordlist, reset)
+	fmt.Printf("  %sWordlist%s  %s→%s  %s%s%s\n",  yellow+bold, reset, gray, reset, white, wordlistLabel, reset)
 	fmt.Printf("  %sProxies%s   %s→%s  %s%s%s\n\n", yellow+bold, reset, gray, reset, white, *proxyFile, reset)
 	fmt.Printf("  %s%s%s\n", gray, repeat("─", 60), reset)
 
@@ -249,7 +266,7 @@ func main() {
 
 	go func() {
 		defer phase1.Done()
-		if err := active.Active(domain, 10, w, proxies, runBrute, *wordlist); err != nil {
+		if err := active.Active(domain, 10, w, proxies, runBrute, wordlistPath); err != nil {
 			log.Printf("[active] %v", err)
 		}
 	}()

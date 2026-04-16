@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"Astarot/core"
+	"github.com/Sneylis/Astarot/core"
 )
 
 // Passive выполняет passive reconnaissance и пишет найденные домены в w.

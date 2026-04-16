@@ -11,11 +11,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/proxy"
 
-	"Astarot/core"
+	"github.com/Sneylis/Astarot/core"
 )
 
 // proxyCheckURL используется для валидации прокси — доступный, надёжный хост.
@@ -69,36 +70,95 @@ func PrepareProxies(proxiesFile string) ([]*ProxyInfo, bool) {
 	return validProxies, true
 }
 
+// ─── Progress bar ────────────────────────────────────────────────────────────
+
+// bruteProgress tracks brute-force progress and owns all terminal output
+// during the scan so workers never interleave their lines.
+type bruteProgress struct {
+	total int
+	barW  int
+	done  atomic.Int64
+	found atomic.Int64
+	mu    sync.Mutex // guards all fmt.Print calls
+}
+
+func newBruteProgress(total int) *bruteProgress {
+	return &bruteProgress{total: total, barW: 28}
+}
+
+// render builds the progress bar string (no newline, starts with \r).
+func (bp *bruteProgress) render() string {
+	d := int(bp.done.Load())
+	f := int(bp.found.Load())
+	pct := 0
+	if bp.total > 0 {
+		pct = d * 100 / bp.total
+	}
+	filled := pct * bp.barW / 100
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", bp.barW-filled)
+	return fmt.Sprintf(
+		"\r  \033[90m→\033[0m  \033[96m[%s]\033[0m  \033[97m%3d%%\033[0m  \033[90m(%d/%d)\033[0m  \033[92m✔ %d found\033[0m   ",
+		bar, pct, d, bp.total, f,
+	)
+}
+
+// tick redraws the bar in place (called by ticker goroutine).
+func (bp *bruteProgress) tick() {
+	bp.mu.Lock()
+	fmt.Print(bp.render())
+	bp.mu.Unlock()
+}
+
+// inc marks one subdomain as processed and redraws the bar.
+func (bp *bruteProgress) inc() {
+	bp.done.Add(1)
+}
+
+// hit records a found subdomain: clears bar, prints the hit, redraws bar.
+func (bp *bruteProgress) hit(domain string) {
+	bp.found.Add(1)
+	bp.mu.Lock()
+	// \r\033[K — go to line start, erase to end
+	fmt.Printf("\r\033[K  \033[92m[+]\033[0m  \033[97m%s\033[0m\n", domain)
+	fmt.Print(bp.render())
+	bp.mu.Unlock()
+}
+
+// finish prints the final state and moves to a new line.
+func (bp *bruteProgress) finish() {
+	bp.mu.Lock()
+	fmt.Print(bp.render())
+	fmt.Println()
+	bp.mu.Unlock()
+}
+
+// ─── Active bruteforce ────────────────────────────────────────────────────────
+
 // Active выполняет активный брутфорс субдоменов с заранее подготовленными прокси.
 // proxies и runBrute получаются из PrepareProxies() — до запуска горутин.
 // wordlistPath — путь к файлу со словарём субдоменов (передаётся флагом --Wsub).
 func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*ProxyInfo, runBrute bool, wordlistPath string) error {
 	if !runBrute {
-		fmt.Println("[!] Активный брутфорс пропущен.")
+		fmt.Printf("  \033[93m[!]\033[0m  Active bruteforce skipped.\n")
 		return nil
 	}
 
 	var pool *ProxyPool
 	if len(proxies) > 0 {
-		pool = newPool(proxies, 0) // maxRequests вычислится после загрузки субдоменов
-	} else {
-		fmt.Println("[*] Запуск без прокси...")
+		pool = newPool(proxies, 0)
 	}
 
-	// 3. Загрузить субдомены
 	if wordlistPath == "" {
 		wordlistPath = "subList.txt"
 	}
 	subdomains, err := loadSubdomains(wordlistPath)
 	if err != nil {
-		return fmt.Errorf("ошибка загрузки субдоменов: %v", err)
+		return fmt.Errorf("load wordlist: %v", err)
 	}
 	if len(subdomains) == 0 {
-		return fmt.Errorf("субдомены не найдены в subList.txt")
+		return fmt.Errorf("wordlist %q is empty", wordlistPath)
 	}
-	fmt.Printf("[*] Субдоменов для брутфорса: %d\n", len(subdomains))
 
-	// Настроить распределение запросов по прокси
 	if pool != nil {
 		pool.maxRequests = len(subdomains) / len(proxies)
 		if pool.maxRequests < 1 {
@@ -106,7 +166,30 @@ func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*Prox
 		}
 	}
 
-	// 4. Запустить воркеры
+	proxyLabel := "direct"
+	if pool != nil {
+		proxyLabel = fmt.Sprintf("%d proxies", len(proxies))
+	}
+	fmt.Printf("  \033[90m→\033[0m  Wordlist: \033[97m%d\033[0m entries  ·  workers: \033[97m%d\033[0m  ·  %s\n",
+		len(subdomains), workersCount, proxyLabel)
+
+	bp := newBruteProgress(len(subdomains))
+
+	// Ticker redraws progress bar every 150ms
+	stopTicker := make(chan struct{})
+	go func() {
+		t := time.NewTicker(150 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				bp.tick()
+			case <-stopTicker:
+				return
+			}
+		}
+	}()
+
 	subChan := make(chan string, len(subdomains))
 	for _, sub := range subdomains {
 		subChan <- sub
@@ -114,16 +197,17 @@ func Active(domain string, workersCount int, w *core.SafeWriter, proxies []*Prox
 	close(subChan)
 
 	var wg sync.WaitGroup
-	for i := 0; i < workersCount; i++ {
+	for range workersCount {
 		wg.Add(1)
-		go func(id int) {
+		go func() {
 			defer wg.Done()
-			worker(id, domain, subChan, w, pool)
-		}(i)
+			worker(domain, subChan, w, pool, bp)
+		}()
 	}
 
 	wg.Wait()
-	fmt.Println("\n[✓] Активный брутфорс завершён!")
+	close(stopTicker)
+	bp.finish()
 	return nil
 }
 
@@ -219,8 +303,8 @@ func (p *ProxyPool) getNextProxy() *ProxyInfo {
 	return p.proxies[p.currentIndex]
 }
 
-// worker обрабатывает субдомены из канала.
-func worker(id int, domain string, subChan <-chan string, w *core.SafeWriter, pool *ProxyPool) {
+// worker обрабатывает субдомены из канала, обновляя прогресс-бар.
+func worker(domain string, subChan <-chan string, w *core.SafeWriter, pool *ProxyPool, bp *bruteProgress) {
 	for subdomain := range subChan {
 		fullDomain := subdomain + "." + domain
 
@@ -231,12 +315,9 @@ func worker(id int, domain string, subChan <-chan string, w *core.SafeWriter, po
 
 		if isAlive(fullDomain, proxyInfo) {
 			_ = w.WriteLine(fullDomain)
-			proxyLabel := "без прокси"
-			if proxyInfo != nil {
-				proxyLabel = maskProxy(proxyInfo.URL)
-			}
-			fmt.Printf("[Worker %d] [✓] %s (%s)\n", id, fullDomain, proxyLabel)
+			bp.hit(fullDomain)
 		}
+		bp.inc()
 	}
 }
 

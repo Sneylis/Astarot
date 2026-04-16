@@ -1,6 +1,6 @@
 go 1.24.0
 
-module Astarot
+module github.com/Sneylis/Astarot
 
 require (
 	github.com/joho/godotenv v1.5.1

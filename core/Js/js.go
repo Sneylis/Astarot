@@ -548,13 +548,22 @@ func postProcess(files []JSFile) []JSFile {
 func extractEndpoints(body []byte) []string {
 	seen := make(map[string]struct{})
 	var out []string
-	for _, m := range reAPIPath.FindAllSubmatch(body, -1) {
-		ep := string(m[1])
+	add := func(ep string) {
+		if ep == "" || ep == "/" {
+			return
+		}
 		if _, ok := seen[ep]; !ok {
 			seen[ep] = struct{}{}
 			out = append(out, ep)
 		}
 	}
+	for _, m := range reAPIPath.FindAllSubmatch(body, -1) {
+		add(string(m[1]))
+	}
+	for _, m := range reAPICall.FindAllSubmatch(body, -1) {
+		add(string(m[1]))
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -792,8 +801,11 @@ var (
 	// String literals that look like JS file paths: "/path/to/file.js"
 	reJSPathStr = regexp.MustCompile(`["'` + "`" + `]((?:[./][^\s"'` + "`" + `]*\.(?:js|jsx|mjs|ts|tsx))(?:\?[^"'` + "`" + `]*)?)["'` + "`" + `]`)
 
-	// API endpoint paths: "/api/...", "/v1/...", "/v2/..."
-	reAPIPath = regexp.MustCompile(`["'` + "`" + `](/(?:api|v\d+|graphql|rest|service|endpoint|internal|external)[^"'` + "`" + `\s]{2,})["'` + "`" + `]`)
+	// API endpoint paths in string literals: "/api/...", "/v1/...", "/graphql", etc.
+	reAPIPath = regexp.MustCompile(`["'` + "`" + `](/(?:api|v\d+|graphql|rest|service|endpoint|internal|external|admin|auth|user|account|search|data|query|mutation|upload|download|webhook|ws|socket)[^"'` + "`" + `\s]{1,})["'` + "`" + `]`)
+
+	// API endpoint paths inside fetch/axios/XHR calls
+	reAPICall = regexp.MustCompile(`(?:fetch|axios\.\w+|this\.\$(?:http|axios)\.\w+|Vue\.http\.\w+|http\.(?:get|post|put|delete|patch|request))\s*\(\s*["'` + "`" + `](/[a-zA-Z0-9/_\-\.?&=%#@:]{2,})["'` + "`" + `]`)
 
 	// Source map comment in JS
 	reSourceMapComment = regexp.MustCompile(`(?m)//# sourceMappingURL=`)

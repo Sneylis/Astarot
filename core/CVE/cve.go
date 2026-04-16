@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	Core "Astarot/core/Analyze"
+	Core "github.com/Sneylis/Astarot/core/Analyze"
 )
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

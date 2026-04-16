@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	Core "Astarot/core/Analyze"
-	cveanalyzer "Astarot/core/CVE"
-	jsanalyzer "Astarot/core/Js"
-	"Astarot/core/masscan"
+	Core "github.com/Sneylis/Astarot/core/Analyze"
+	cveanalyzer "github.com/Sneylis/Astarot/core/CVE"
+	jsanalyzer "github.com/Sneylis/Astarot/core/Js"
+	"github.com/Sneylis/Astarot/core/masscan"
 )
 
 // PortInfo — открытый порт с подсказкой по сервису.
@@ -71,10 +71,12 @@ type HostReport struct {
 	HasError     bool
 	Error        string
 	// JS Analysis
-	JSFiles    []JSFileRow
-	JSSecrets  []JSSecretRow
-	HasJS      bool
-	HasSecrets bool
+	JSFiles      []JSFileRow
+	JSSecrets    []JSSecretRow
+	JSEndpoints  []string
+	HasJS        bool
+	HasSecrets   bool
+	HasEndpoints bool
 	// CVE Analysis
 	CVEFindings  []CVERow
 	HasCVE       bool
@@ -90,22 +92,24 @@ type techRow struct {
 
 // Report — корневая структура отчёта.
 type Report struct {
-	Target    string
-	Generated string
-	Hosts     []HostReport
-	Stats     Stats
+	Target     string
+	Generated  string
+	Hosts      []HostReport
+	Stats      Stats
+	ExportURLs []string // all hosts + JS endpoints for Burp import
 }
 
 type Stats struct {
-	TotalHosts   int
-	HostsWithWAF int
-	TotalPorts   int
-	UniqueIPs    int
-	TotalJS      int
-	TotalSecrets int
-	TotalCVE     int
-	CVECritical  int
-	CVEHigh      int
+	TotalHosts    int
+	HostsWithWAF  int
+	TotalPorts    int
+	UniqueIPs     int
+	TotalJS       int
+	TotalSecrets  int
+	TotalCVE      int
+	CVECritical   int
+	CVEHigh       int
+	TotalEndpoints int
 }
 
 // masscan JSON entry
@@ -217,6 +221,7 @@ func Build(
 			r.Stats.TotalJS += len(hr.JSFiles)
 		}
 		r.Stats.TotalSecrets += len(hr.JSSecrets)
+		r.Stats.TotalEndpoints += len(hr.JSEndpoints)
 
 		// CVE merge
 		if cveHost, ok := cveMap[w.URL]; ok {
@@ -239,23 +244,43 @@ func Build(
 	r.Stats.TotalHosts = len(r.Hosts)
 	r.Stats.UniqueIPs = len(uniqueIPs)
 
+	// Build Burp export list: live hosts + JS file URLs + constructed endpoint URLs
+	exportSet := make(map[string]struct{})
+	for _, h := range r.Hosts {
+		exportSet[h.URL] = struct{}{}
+		for _, f := range h.JSFiles {
+			if f.URL != "" {
+				exportSet[f.URL] = struct{}{}
+			}
+		}
+		base := strings.TrimRight(h.URL, "/")
+		for _, ep := range h.JSEndpoints {
+			exportSet[base+ep] = struct{}{}
+		}
+	}
+	for u := range exportSet {
+		r.ExportURLs = append(r.ExportURLs, u)
+	}
+	sort.Strings(r.ExportURLs)
+
 	return r, nil
 }
 
 // mergeJSIntoHost populates JS-related fields on hr from a jsanalyzer.HostResult.
 func mergeJSIntoHost(hr *HostReport, js jsanalyzer.HostResult) {
+	secretSeen := make(map[string]struct{})  // key: name+"\x00"+value
+	endpointSeen := make(map[string]struct{})
+
 	for _, f := range js.JSFiles {
-		row := JSFileRow{
-			URL:          f.URL,
-			Path:         f.Path,
-			Source:       f.Source,
-			StatusCode:   f.StatusCode,
-			HasSourceMap: f.HasSourceMap,
-			IsVendor:     f.IsVendor,
-			SecretCount:  len(f.Secrets),
-		}
-		hr.JSFiles = append(hr.JSFiles, row)
+		// Count only unique secrets for this file's badge
+		uniqueForFile := 0
 		for _, s := range f.Secrets {
+			key := s.Name + "\x00" + s.Value
+			if _, dup := secretSeen[key]; dup {
+				continue
+			}
+			secretSeen[key] = struct{}{}
+			uniqueForFile++
 			hr.JSSecrets = append(hr.JSSecrets, JSSecretRow{
 				Name:     s.Name,
 				Value:    s.Value,
@@ -264,9 +289,29 @@ func mergeJSIntoHost(hr *HostReport, js jsanalyzer.HostResult) {
 				JSURL:    f.URL,
 			})
 		}
+
+		hr.JSFiles = append(hr.JSFiles, JSFileRow{
+			URL:          f.URL,
+			Path:         f.Path,
+			Source:       f.Source,
+			StatusCode:   f.StatusCode,
+			HasSourceMap: f.HasSourceMap,
+			IsVendor:     f.IsVendor,
+			SecretCount:  uniqueForFile,
+		})
+
+		for _, ep := range f.Endpoints {
+			if _, ok := endpointSeen[ep]; !ok {
+				endpointSeen[ep] = struct{}{}
+				hr.JSEndpoints = append(hr.JSEndpoints, ep)
+			}
+		}
 	}
+
+	sort.Strings(hr.JSEndpoints)
 	hr.HasJS = len(hr.JSFiles) > 0
 	hr.HasSecrets = len(hr.JSSecrets) > 0
+	hr.HasEndpoints = len(hr.JSEndpoints) > 0
 }
 
 // GenerateHTML рендерит отчёт в HTML-файл.
@@ -285,9 +330,14 @@ func GenerateHTML(r *Report, outputFile string) error {
 			}
 		},
 		"serviceHint": serviceHint,
-		"add":         func(a, b int) int { return a + b },
-		"gt":          func(a, b int) bool { return a > b },
-		"lower":       strings.ToLower,
+		"add":      func(a, b int) int { return a + b },
+		"gt":       func(a, b int) bool { return a > b },
+		"lower":    strings.ToLower,
+		"contains": strings.Contains,
+		"toJS": func(v any) (template.JS, error) {
+			b, err := json.Marshal(v)
+			return template.JS(b), err
+		},
 	}).Parse(htmlTemplate)
 	if err != nil {
 		return fmt.Errorf("template parse: %w", err)
@@ -657,6 +707,25 @@ const htmlTemplate = `<!DOCTYPE html>
   /* ── Title text ── */
   .page-title { color: #8b949e; font-size: 12px; font-style: italic; }
 
+  /* ── Export button ── */
+  .export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #c9d1d9;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+  }
+  .export-btn:hover { background: #30363d; border-color: #58a6ff; color: #58a6ff; }
+  .export-btn svg { width:14px; height:14px; flex-shrink:0; }
+
   /* ── Footer ── */
   .footer { text-align: center; padding: 32px; color: #30363d; font-size: 12px; }
 
@@ -689,6 +758,54 @@ const htmlTemplate = `<!DOCTYPE html>
   .sev-count { display:inline-flex; align-items:center; gap:4px; padding:3px 10px;
     border-radius:10px; font-size:12px; font-weight:600; }
 
+  /* ── Collapsible details ── */
+  details { width: 100%; }
+  details summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0 6px;
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before {
+    content: '▶';
+    font-size: 9px;
+    color: #8b949e;
+    transition: transform .15s;
+    display: inline-block;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  details summary:hover { color: #c9d1d9; }
+
+  /* ── Endpoints section ── */
+  .endpoints-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 4px 0 8px;
+  }
+  .ep-badge {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+  .ep-api     { background:#0d2137; color:#79c0ff; border-color:#1f6feb55; }
+  .ep-graphql { background:#1a0d2e; color:#d2a8ff; border-color:#6e40c9; }
+  .ep-auth    { background:#1a0d0d; color:#ff7b72; border-color:#6e2a2a; }
+  .ep-admin   { background:#2d1a0d; color:#ffa657; border-color:#6e3a2a; }
+  .ep-other   { background:#161b22; color:#8b949e; border-color:#30363d; }
+
   /* ── CVE section ── */
   .cve-section { padding: 0 20px 16px; border-top: 1px solid #21262d; margin-top: 4px; }
   .cve-table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -708,9 +825,19 @@ const htmlTemplate = `<!DOCTYPE html>
 
 <div class="header">
   <div class="logo">&#9654;</div>
-  <div>
+  <div style="flex:1">
     <h1>Astarot Recon Report</h1>
     <div class="meta">Target: <strong>{{.Target}}</strong> &nbsp;|&nbsp; Generated: {{.Generated}}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-shrink:0">
+    <button class="export-btn" onclick="exportBurp('txt')" title="One URL per line — paste into Burp Target scope">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.061l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.061z"/></svg>
+      Export to Burp
+    </button>
+    <button class="export-btn" onclick="exportBurp('json')" title="JSON array — for scripting / API clients">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.061l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.061z"/></svg>
+      Export JSON
+    </button>
   </div>
 </div>
 
@@ -734,6 +861,10 @@ const htmlTemplate = `<!DOCTYPE html>
   <div class="stat-card">
     <div class="num" style="color:#79c0ff">{{.Stats.TotalJS}}</div>
     <div class="label">JS Files</div>
+  </div>
+  <div class="stat-card">
+    <div class="num" style="color:#d2a8ff">{{.Stats.TotalEndpoints}}</div>
+    <div class="label">API Endpoints</div>
   </div>
   <div class="stat-card">
     <div class="num" style="color:{{if gt .Stats.TotalSecrets 0}}#ff7b72{{else}}#56d364{{end}}">{{.Stats.TotalSecrets}}</div>
@@ -866,38 +997,53 @@ const htmlTemplate = `<!DOCTYPE html>
   </div>
   {{end}}
 
-  {{/* JS Files + Secrets section */}}
+  {{/* JS Analysis section */}}
   {{if .HasJS}}
   <div class="js-section">
 
-    <div class="section-title" style="margin-top:14px">JS Files ({{len .JSFiles}})</div>
-    <table class="js-files-table">
-      <tr>
-        <th>Path / URL</th>
-        <th>Source</th>
-        <th>Status</th>
-        <th>Map</th>
-        <th>Secrets</th>
-        <th>Type</th>
-      </tr>
-      {{range .JSFiles}}
-      <tr>
-        <td><a class="js-url" href="{{.URL}}" target="_blank">{{if .Path}}{{.Path}}{{else}}{{.URL}}{{end}}</a></td>
-        <td style="color:#8b949e">{{.Source}}</td>
-        <td>{{if .StatusCode}}<span class="badge {{statusClass .StatusCode}}">{{.StatusCode}}</span>{{end}}</td>
-        <td>{{if .HasSourceMap}}<span class="js-map">✓ .map</span>{{else}}<span style="color:#30363d">—</span>{{end}}</td>
-        <td>{{if gt .SecretCount 0}}<span style="color:#ff7b72;font-weight:600">{{.SecretCount}}</span>{{else}}<span style="color:#30363d">0</span>{{end}}</td>
-        <td>{{if .IsVendor}}<span class="js-vendor">vendor</span>{{else}}<span style="color:#3fb950">custom</span>{{end}}</td>
-      </tr>
-      {{end}}
-    </table>
+    {{/* ── JS Files (collapsible) ── */}}
+    <details>
+      <summary>JS Files ({{len .JSFiles}}){{if .HasSecrets}}&nbsp;&nbsp;<span style="color:#ff7b72;font-weight:700">&#9888; {{len .JSSecrets}} secret{{if gt (len .JSSecrets) 1}}s{{end}}</span>{{end}}</summary>
+      <table class="js-files-table">
+        <tr>
+          <th>Path / URL</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Map</th>
+          <th>Secrets</th>
+          <th>Type</th>
+        </tr>
+        {{range .JSFiles}}
+        <tr>
+          <td><a class="js-url" href="{{.URL}}" target="_blank">{{if .Path}}{{.Path}}{{else}}{{.URL}}{{end}}</a></td>
+          <td style="color:#8b949e">{{.Source}}</td>
+          <td>{{if .StatusCode}}<span class="badge {{statusClass .StatusCode}}">{{.StatusCode}}</span>{{end}}</td>
+          <td>{{if .HasSourceMap}}<span class="js-map">✓ .map</span>{{else}}<span style="color:#30363d">—</span>{{end}}</td>
+          <td>{{if gt .SecretCount 0}}<span style="color:#ff7b72;font-weight:600">{{.SecretCount}}</span>{{else}}<span style="color:#30363d">0</span>{{end}}</td>
+          <td>{{if .IsVendor}}<span class="js-vendor">vendor</span>{{else}}<span style="color:#3fb950">custom</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </table>
+    </details>
 
+    {{/* ── API Endpoints (collapsible) ── */}}
+    {{if .HasEndpoints}}
+    <details>
+      <summary>API Endpoints ({{len .JSEndpoints}})</summary>
+      <div class="endpoints-grid">
+        {{range .JSEndpoints}}
+        <span class="ep-badge {{if or (contains . "/auth") (contains . "/login") (contains . "/logout") (contains . "/token") (contains . "/oauth") (contains . "/password")}}ep-auth{{else if or (contains . "/admin") (contains . "/dashboard") (contains . "/manage")}}ep-admin{{else if or (contains . "/graphql") (contains . "/mutation") (contains . "/__typename")}}ep-graphql{{else if or (contains . "/api") (contains . "/v1") (contains . "/v2") (contains . "/v3") (contains . "/rest")}}ep-api{{else}}ep-other{{end}}">{{.}}</span>
+        {{end}}
+      </div>
+    </details>
+    {{end}}
+
+    {{/* ── Secrets (always visible when present — high priority) ── */}}
     {{if .HasSecrets}}
-    <div class="section-title" style="margin-top:16px;color:#ff7b72">
+    <div class="section-title" style="margin-top:14px;color:#ff7b72">
       &#9888; Secrets / Sensitive Data ({{len .JSSecrets}})
     </div>
 
-    {{/* Severity summary counts */}}
     <div class="secrets-summary">
       {{$crit := 0}}{{$high := 0}}{{$med := 0}}{{$low := 0}}
       {{range .JSSecrets}}
@@ -941,5 +1087,32 @@ const htmlTemplate = `<!DOCTYPE html>
 </div>
 
 <div class="footer">Generated by Astarot &mdash; {{.Generated}}</div>
+
+<script>
+const _exportURLs = {{toJS .ExportURLs}};
+const _target = {{toJS .Target}};
+
+function exportBurp(fmt) {
+  let content, filename, mime;
+  if (fmt === 'json') {
+    content = JSON.stringify(_exportURLs, null, 2);
+    filename = 'burp_targets_' + _target + '.json';
+    mime = 'application/json';
+  } else {
+    content = _exportURLs.join('\n');
+    filename = 'burp_targets_' + _target + '.txt';
+    mime = 'text/plain';
+  }
+  const blob = new Blob([content], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+</script>
+
 </body>
 </html>`

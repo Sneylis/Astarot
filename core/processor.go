@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	probe "Astarot/core/Checker"
+	probe "github.com/Sneylis/Astarot/core/Checker"
 )
 
 // DedupeAndCheckAlive reads raw domains from rawFile, performs HTTP alive checks
