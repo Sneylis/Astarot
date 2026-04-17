@@ -66,7 +66,7 @@ Domain input
 go install github.com/Sneylis/Astarot/cmd/astarot@latest
 ```
 after you need add the `.env` and `proxies.txt` file near astarot binary
-# .env
+### .env
 ```
 # SecurityTrails API
 # Get_API: https://securitytrails.com/corp/api
@@ -78,13 +78,13 @@ SECURITYTRAILS_API_KEY=your_securitytrails_api_key_here
 # Free tier: 4 requests/min, 500/at day
 VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
 ```
-# proxies.txt
+### proxies.txt
 ```
 # socks5://user:pass@1.2.3.4:1080
 # http://1.2.3.4:8080
 ```
 
-# link
+#### link
 you can add link with these bash script with envorinment files (proxies.txt and env)
 ```
 #!/bin/bash
