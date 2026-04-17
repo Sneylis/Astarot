@@ -65,6 +65,33 @@ Domain input
 ```bash
 go install github.com/Sneylis/Astarot/cmd/astarot@latest
 ```
+after you need add the `.env` and `proxies.txt` file near astarot binary
+# .env
+```
+# SecurityTrails API
+# Get_API: https://securitytrails.com/corp/api
+# Free tier: 50 requests at mounth
+SECURITYTRAILS_API_KEY=your_securitytrails_api_key_here
+
+# VirusTotal API
+# Get_API: https://www.virustotal.com/gui/my-apikey
+# Free tier: 4 requests/min, 500/at day
+VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
+```
+# proxies.txt
+```
+# socks5://user:pass@1.2.3.4:1080
+# http://1.2.3.4:8080
+```
+
+# link
+you can add link with these bash script with envorinment files (proxies.txt and env)
+```
+#!/bin/bash
+cd ~/go/bin/astarot/ && ./astarot "$@"
+chmod +x /usr/bin/astarot
+astarot --help
+```
 
 The binary is fully self-contained — the subdomain wordlist and Wappalyzer tech database are embedded at compile time. No extra files needed.
 
@@ -75,6 +102,8 @@ git clone https://github.com/Sneylis/Astarot
 cd Astarot
 go build -o astarot ./cmd/astarot/
 ```
+
+
 
 ---
 
